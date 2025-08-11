@@ -1,0 +1,188 @@
+# Simplified Azure DevOps CI/CD Pipeline for Inspect Connect
+# This pipeline is for development and testing purposes
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - client/*
+    - server/*
+    - azure-pipelines-simple.yml
+
+variables:
+  # Docker image names
+  clientImageName: 'inspect-connect-client'
+  serverImageName: 'inspect-connect-server'
+  
+  # Container registry (you can change this to your registry)
+  dockerRegistry: 'your-registry.azurecr.io'
+  
+  # Environment variables
+  nodeVersion: '18.x'
+  npmVersion: '9.x'
+
+stages:
+- stage: Build
+  displayName: 'Build and Test'
+  jobs:
+  - job: BuildClient
+    displayName: 'Build Frontend'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd client
+        npm ci
+      displayName: 'Install Frontend Dependencies'
+    
+    - script: |
+        cd client
+        npm run build
+      displayName: 'Build Frontend'
+    
+    - script: |
+        cd client
+        npm run lint
+      displayName: 'Lint Frontend Code'
+      continueOnError: true
+    
+    - script: |
+        cd client
+        npm test
+      displayName: 'Run Frontend Tests'
+      continueOnError: true
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: 'client/dist'
+        artifactName: 'client-build'
+      displayName: 'Publish Frontend Build'
+
+  - job: BuildServer
+    displayName: 'Build Backend'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd server
+        npm ci
+      displayName: 'Install Backend Dependencies'
+    
+    - script: |
+        cd server
+        npm run build
+      displayName: 'Build Backend'
+    
+    - script: |
+        cd server
+        npm run lint
+      displayName: 'Lint Backend Code'
+      continueOnError: true
+    
+    - script: |
+        cd server
+        npm test
+      displayName: 'Run Backend Tests'
+      continueOnError: true
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: 'server/dist'
+        artifactName: 'server-build'
+      displayName: 'Publish Backend Build'
+
+- stage: Docker
+  displayName: 'Build Docker Images'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: BuildDockerImages
+    displayName: 'Build and Push Docker Images'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'your-acr-connection'
+        repository: $(clientImageName)
+        command: 'buildAndPush'
+        Dockerfile: 'client/Dockerfile'
+        tags: |
+          latest
+          $(Build.BuildId)
+      displayName: 'Build and Push Client Image'
+    
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'your-acr-connection'
+        repository: $(serverImageName)
+        command: 'buildAndPush'
+        Dockerfile: 'server/Dockerfile'
+        tags: |
+          latest
+          $(Build.BuildId)
+      displayName: 'Build and Push Server Image'
+
+- stage: Deploy
+  displayName: 'Deploy to Test Environment'
+  dependsOn: Docker
+  condition: succeeded()
+  jobs:
+  - deployment: DeployToTest
+    displayName: 'Deploy to Test Environment'
+    environment: 'test-environment'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: 'client-build'
+          
+          - download: current
+            artifact: 'server-build'
+          
+          - script: |
+              echo "Deploying to test environment..."
+              # Add your deployment commands here
+              # This could be deploying to Azure App Service, AKS, or other services
+            displayName: 'Deploy Application'
+          
+          - script: |
+              echo "Running health checks..."
+              # Add health check commands here
+            displayName: 'Health Checks'
+
+- stage: Notify
+  displayName: 'Send Notifications'
+  dependsOn: Deploy
+  condition: always()
+  jobs:
+  - job: NotifyTeam
+    displayName: 'Notify Team'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - script: |
+        if [ "$(Build.Result)" == "Succeeded" ]; then
+          echo "✅ Pipeline completed successfully!"
+        else
+          echo "❌ Pipeline failed!"
+        fi
+      displayName: 'Pipeline Status Notification'
