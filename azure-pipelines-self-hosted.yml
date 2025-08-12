@@ -80,7 +80,7 @@ stages:
     - task: AzureWebApp@1
       displayName: Deploy Frontend to App Service
       inputs:
-        azureSubscription: 'inspect-connect-acr'
+        azureSubscription: 'inspect-connect-appservice'
         appName: 'inspect-connect-test'
         package: '$(Build.SourcesDirectory)/client/dist'
         appSettings: |
@@ -135,7 +135,7 @@ stages:
     - task: AzureWebApp@1
       displayName: Deploy Backend to App Service
       inputs:
-        azureSubscription: 'inspect-connect-acr'
+        azureSubscription: 'inspect-connect-appservice'
         appName: 'inspect-connect-api-test'
         package: '$(Build.ArtifactStagingDirectory)/server.zip'
         appSettings: |
