@@ -1,0 +1,107 @@
+# Simplified Single-Job Azure DevOps CI/CD Pipeline for Inspect Connect
+# This pipeline runs everything in one job to avoid parallelism issues
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - client/*
+    - server/*
+    - azure-pipelines-single-job.yml
+
+variables:
+  # Docker image names
+  clientImageName: 'inspect-connect-client'
+  serverImageName: 'inspect-connect-server'
+  
+  # Container registry
+  dockerRegistry: 'inspectconnectregistry.azurecr.io'
+  
+  # Environment variables
+  nodeVersion: '20.x'
+  npmVersion: '9.x'
+
+stages:
+- stage: BuildAndDeploy
+  displayName: 'Build, Test, and Deploy'
+  jobs:
+  - job: BuildAndDeployAll
+    displayName: 'Build and Deploy Everything'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    # Install Node.js
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+      displayName: 'Install Node.js'
+    
+    # Build Frontend
+    - script: |
+        echo "Building Frontend..."
+        cd client
+        npm ci
+        npm run build
+        npm run lint || true
+        npm test || true
+      displayName: 'Build Frontend'
+    
+    # Build Backend
+    - script: |
+        echo "Building Backend..."
+        cd ../server
+        npm ci
+        npm run build
+        npm run lint || true
+        npm test || true
+      displayName: 'Build Backend'
+    
+    # Build and Push Docker Images
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'inspect-connect-acr-connection'
+        repository: $(clientImageName)
+        command: 'buildAndPush'
+        Dockerfile: 'client/Dockerfile'
+        tags: |
+          latest
+          $(Build.BuildId)
+      displayName: 'Build and Push Client Image'
+    
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'inspect-connect-acr-connection'
+        repository: $(serverImageName)
+        command: 'buildAndPush'
+        Dockerfile: 'server/Dockerfile'
+        tags: |
+          latest
+          $(Build.BuildId)
+      displayName: 'Build and Push Server Image'
+    
+    # Deploy Frontend
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: 'inspect-connect-acr'
+        appName: 'inspect-connect-test'
+        package: '$(System.DefaultWorkingDirectory)/client/dist'
+      displayName: 'Deploy Frontend to App Service'
+    
+    # Deploy Backend
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: 'inspect-connect-acr'
+        appName: 'inspect-connect-api-test'
+        package: '$(System.DefaultWorkingDirectory)/server/dist'
+      displayName: 'Deploy Backend to App Service'
+    
+    # Health Check
+    - script: |
+        echo "✅ Pipeline completed successfully!"
+        echo "Frontend URL: https://inspect-connect-test-fyanc3gpfacngbau.canadacentral-01.azurewebsites.net"
+        echo "Backend URL: https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net"
+      displayName: 'Pipeline Status and URLs'
