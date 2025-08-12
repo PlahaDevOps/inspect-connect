@@ -12,7 +12,7 @@ trigger:
     - azure-pipelines-self-hosted.yml
 
 variables:
-  nodeVersion: '20.x'
+  nodeVersion: '24.5.0'
 
 stages:
 - stage: BuildAndDeploy
@@ -26,34 +26,17 @@ stages:
       - agent.name -equals inspect-connect-mac-agent
     
     steps:
-    # Setup Node.js with asdf
+    # Use existing Node.js installation
     - script: |
-        echo "Setting up Node.js with asdf..."
-        # Load asdf
-        . $HOME/.asdf/asdf.sh
-        
-        # Install Node.js if not already installed
-        if ! asdf list nodejs | grep -q "$(nodeVersion)"; then
-          echo "Installing Node.js $(nodeVersion)..."
-          asdf install nodejs $(nodeVersion)
-        fi
-        
-        # Set local Node.js version
-        asdf local nodejs $(nodeVersion)
-        
-        # Verify installation
+        echo "Using existing Node.js installation..."
         node --version
         npm --version
         which tsc
-      displayName: 'Setup Node.js with asdf'
+      displayName: 'Verify Node.js Setup'
     
     # Build Frontend
     - script: |
         echo "Building Frontend..."
-        # Load asdf and set Node.js version
-        . $HOME/.asdf/asdf.sh
-        asdf local nodejs $(nodeVersion)
-        
         cd client
         npm ci
         npm run build
@@ -62,10 +45,6 @@ stages:
     # Build Backend
     - script: |
         echo "Building Backend..."
-        # Load asdf and set Node.js version
-        . $HOME/.asdf/asdf.sh
-        asdf local nodejs $(nodeVersion)
-        
         cd ../server
         npm ci
         npm run build
