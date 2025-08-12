@@ -44,7 +44,8 @@ stages:
     - script: |
         echo "Installing Frontend Dependencies..."
         cd client
-        npm ci
+        npm cache clean --force
+        npm install
       displayName: 'Install Frontend Dependencies'
     
     # Build Frontend
@@ -58,7 +59,8 @@ stages:
     - script: |
         echo "Installing Backend Dependencies..."
         cd ../server
-        npm ci
+        npm cache clean --force
+        npm install
       displayName: 'Install Backend Dependencies'
     
     # Build Backend
