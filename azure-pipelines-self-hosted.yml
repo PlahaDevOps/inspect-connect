@@ -1,18 +1,17 @@
 # Self-hosted agent pipeline for Inspect Connect
-# This pipeline uses your local machine as the build agent
 
 trigger:
   branches:
     include:
-    - main
+      - main
   paths:
     include:
-    - client/*
-    - server/*
-    - azure-pipelines-self-hosted.yml
+      - client/*
+      - server/*
+      - azure-pipelines-self-hosted.yml
 
 variables:
-  nodeVersion: '24.5.0'
+  nodeVersion: '20.x'
 
 stages:
 - stage: BuildAndDeploy
@@ -23,53 +22,44 @@ stages:
     pool:
       name: 'inspect-connect-agents'
       demands:
-      - agent.name -equals inspect-connect-mac-agent
-    
+        - agent.name -equals inspect-connect-mac-agent
+
     steps:
-    # Use existing Node.js installation and install TypeScript
+    # Install Node.js via NodeTool
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+      displayName: 'Use Node.js $(nodeVersion)'
+
     - script: |
-        echo "Using existing Node.js installation..."
         node --version
         npm --version
-        
-        echo "Installing TypeScript globally..."
         npm install -g typescript
-        
-        echo "Verifying TypeScript installation..."
         tsc --version
-        which tsc
-      displayName: 'Setup Node.js and TypeScript'
-    
+      displayName: 'Verify Node.js & TypeScript'
+
     # Install Frontend Dependencies
     - script: |
-        echo "Installing Frontend Dependencies..."
         cd client
-        npm cache clean --force
-        npm install
+        npm ci
       displayName: 'Install Frontend Dependencies'
-    
+      workingDirectory: $(System.DefaultWorkingDirectory)/client
+
+    # Optional: Type-check without failing build
+    - script: |
+        cd client
+        npx tsc --noEmit || true
+      displayName: 'Type Check (Non-blocking)'
+      continueOnError: true
+      workingDirectory: $(System.DefaultWorkingDirectory)/client
+
     # Build Frontend
     - script: |
-        echo "Building Frontend..."
         cd client
         npm run build
       displayName: 'Build Frontend'
-    
-    # Install Backend Dependencies
-    - script: |
-        echo "Installing Backend Dependencies..."
-        cd ../server
-        npm cache clean --force
-        npm install
-      displayName: 'Install Backend Dependencies'
-    
-    # Build Backend
-    - script: |
-        echo "Building Backend..."
-        cd ../server
-        npm run build
-      displayName: 'Build Backend'
-    
+      workingDirectory: $(System.DefaultWorkingDirectory)/client
+
     # Deploy Frontend
     - task: AzureWebApp@1
       inputs:
@@ -78,14 +68,41 @@ stages:
         package: '$(System.DefaultWorkingDirectory)/client/dist'
         appSettings: |
           -VITE_API_URL https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net
+          -WEBSITES_PORT 80
+          -PM2_SERVE_PATH /home/site/wwwroot
+        startupCommand: 'pm2 serve /home/site/wwwroot --spa --no-daemon'
       displayName: 'Deploy Frontend to App Service'
-    
+
+    # Install Backend Dependencies
+    - script: |
+        cd server
+        npm ci
+      displayName: 'Install Backend Dependencies'
+      workingDirectory: $(System.DefaultWorkingDirectory)/server
+
+    # Build Backend
+    - script: |
+        cd server
+        npm run build
+      displayName: 'Build Backend'
+      workingDirectory: $(System.DefaultWorkingDirectory)/server
+
+    # Archive Backend for Deployment
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)/server'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
+        replaceExistingArchive: true
+      displayName: 'Archive Backend'
+
     # Deploy Backend
     - task: AzureWebApp@1
       inputs:
         azureSubscription: 'inspect-connect-acr'
         appName: 'inspect-connect-api-test'
-        package: '$(System.DefaultWorkingDirectory)/server/dist'
+        package: '$(Build.ArtifactStagingDirectory)/server.zip'
         appSettings: |
           -MONGODB_URI $(MONGODB_URI)
           -JWT_SECRET $(JWT_SECRET)
@@ -95,8 +112,10 @@ stages:
           -CLOUDINARY_CLOUD_NAME $(CLOUDINARY_CLOUD_NAME)
           -CLOUDINARY_API_KEY $(CLOUDINARY_API_KEY)
           -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)
+          -SCM_DO_BUILD_DURING_DEPLOYMENT true
+          -WEBSITE_NODE_DEFAULT_VERSION ~20
       displayName: 'Deploy Backend to App Service'
-    
+
     # Success Message
     - script: |
         echo "✅ Pipeline completed successfully!"
