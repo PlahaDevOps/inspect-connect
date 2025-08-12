@@ -17,11 +17,11 @@ variables:
   clientImageName: 'inspect-connect-client'
   serverImageName: 'inspect-connect-server'
   
-  # Container registry (you can change this to your registry)
-  dockerRegistry: 'your-registry.azurecr.io'
+  # Container registry (update with your ACR name)
+  dockerRegistry: 'inspectconnectregistry.azurecr.io'
   
   # Environment variables
-  nodeVersion: '18.x'
+  nodeVersion: '20.x'
   npmVersion: '9.x'
 
 stages:
@@ -119,7 +119,7 @@ stages:
     steps:
     - task: Docker@2
       inputs:
-        containerRegistry: 'your-acr-connection'
+        containerRegistry: 'inspect-connect-acr-connection'
         repository: $(clientImageName)
         command: 'buildAndPush'
         Dockerfile: 'client/Dockerfile'
@@ -130,7 +130,7 @@ stages:
     
     - task: Docker@2
       inputs:
-        containerRegistry: 'your-acr-connection'
+        containerRegistry: 'inspect-connect-acr-connection'
         repository: $(serverImageName)
         command: 'buildAndPush'
         Dockerfile: 'server/Dockerfile'
@@ -157,11 +157,19 @@ stages:
           - download: current
             artifact: 'server-build'
           
-          - script: |
-              echo "Deploying to test environment..."
-              # Add your deployment commands here
-              # This could be deploying to Azure App Service, AKS, or other services
-            displayName: 'Deploy Application'
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: 'inspect-connect-subscription'
+              appName: 'inspect-connect-test'
+              package: '$(Pipeline.Workspace)/client-build'
+            displayName: 'Deploy Frontend to App Service'
+          
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: 'inspect-connect-subscription'
+              appName: 'inspect-connect-api-test'
+              package: '$(Pipeline.Workspace)/server-build'
+            displayName: 'Deploy Backend to App Service'
           
           - script: |
               echo "Running health checks..."

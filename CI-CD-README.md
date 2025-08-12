@@ -34,7 +34,7 @@ This document describes the simplified CI/CD pipeline setup for the Inspect Conn
    - **Azure Container Registry (ACR)**
      - Go to Project Settings → Service Connections
      - Create new service connection for Azure Container Registry
-     - Name it: `your-acr-connection`
+     - Name it: `inspect-connect-acr-connection`
 
 3. **Create Environment**
    - Go to Pipelines → Environments
@@ -44,7 +44,7 @@ This document describes the simplified CI/CD pipeline setup for the Inspect Conn
 1. **Azure Container Registry (ACR)**
    ```bash
    # Create ACR
-   az acr create --name your-registry --resource-group your-rg --sku Basic
+   az acr create --name inspectconnectregistry --resource-group your-rg --sku Basic
    ```
 
 2. **Test Environment** (Choose one):
@@ -75,7 +75,7 @@ Set these in Azure DevOps Pipeline Variables:
 ### 3. Service Connection Names
 Update these in the pipeline:
 ```yaml
-containerRegistry: 'your-acr-connection'  # Your ACR service connection name
+containerRegistry: 'inspect-connect-acr-connection'  # Your ACR service connection name
 environment: 'test-environment'           # Your environment name
 ```
 
