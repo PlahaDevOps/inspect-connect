@@ -26,13 +26,19 @@ stages:
       - agent.name -equals inspect-connect-mac-agent
     
     steps:
-    # Use existing Node.js installation
+    # Use existing Node.js installation and install TypeScript
     - script: |
         echo "Using existing Node.js installation..."
         node --version
         npm --version
+        
+        echo "Installing TypeScript globally..."
+        npm install -g typescript
+        
+        echo "Verifying TypeScript installation..."
+        tsc --version
         which tsc
-      displayName: 'Verify Node.js Setup'
+      displayName: 'Setup Node.js and TypeScript'
     
     # Build Frontend
     - script: |
