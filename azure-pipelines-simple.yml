@@ -159,14 +159,14 @@ stages:
           
           - task: AzureWebApp@1
             inputs:
-              azureSubscription: 'inspect-connect-subscription'
+              azureSubscription: 'inspect-connect-acr'
               appName: 'inspect-connect-test'
               package: '$(Pipeline.Workspace)/client-build'
             displayName: 'Deploy Frontend to App Service'
           
           - task: AzureWebApp@1
             inputs:
-              azureSubscription: 'inspect-connect-subscription'
+              azureSubscription: 'inspect-connect-acr'
               appName: 'inspect-connect-api-test'
               package: '$(Pipeline.Workspace)/server-build'
             displayName: 'Deploy Backend to App Service'
