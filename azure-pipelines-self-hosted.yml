@@ -87,6 +87,7 @@ stages:
           -VITE_API_URL https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net
           -WEBSITES_PORT 80
         startupCommand: 'pm2 serve /home/site/wwwroot --spa --no-daemon'
+        usePublishProfile: true
 
     # ---- BACKEND -----------------------------------------------------------
     - task: Cache@2
@@ -138,6 +139,7 @@ stages:
         azureSubscription: 'inspect-connect-appservice'
         appName: 'inspect-connect-api-test'
         package: '$(Build.ArtifactStagingDirectory)/server.zip'
+        usePublishProfile: true
         appSettings: |
           -SCM_DO_BUILD_DURING_DEPLOYMENT true
           -WEBSITE_NODE_DEFAULT_VERSION ~20
