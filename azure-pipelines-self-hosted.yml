@@ -1,0 +1,83 @@
+# Self-hosted agent pipeline for Inspect Connect
+# This pipeline uses your local machine as the build agent
+
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - client/*
+    - server/*
+    - azure-pipelines-self-hosted.yml
+
+variables:
+  nodeVersion: '20.x'
+
+stages:
+- stage: BuildAndDeploy
+  displayName: 'Build and Deploy'
+  jobs:
+  - job: BuildAndDeployAll
+    displayName: 'Build and Deploy Everything'
+    pool:
+      name: 'inspect-connect-agents'
+      demands:
+      - agent.name -equals inspect-connect-mac-agent
+    
+    steps:
+    # Install Node.js
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+      displayName: 'Install Node.js'
+    
+    # Build Frontend
+    - script: |
+        echo "Building Frontend..."
+        cd client
+        npm ci
+        npm run build
+      displayName: 'Build Frontend'
+    
+    # Build Backend
+    - script: |
+        echo "Building Backend..."
+        cd ../server
+        npm ci
+        npm run build
+      displayName: 'Build Backend'
+    
+    # Deploy Frontend
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: 'inspect-connect-acr'
+        appName: 'inspect-connect-test'
+        package: '$(System.DefaultWorkingDirectory)/client/dist'
+        appSettings: |
+          -VITE_API_URL https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net
+      displayName: 'Deploy Frontend to App Service'
+    
+    # Deploy Backend
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: 'inspect-connect-acr'
+        appName: 'inspect-connect-api-test'
+        package: '$(System.DefaultWorkingDirectory)/server/dist'
+        appSettings: |
+          -MONGODB_URI $(MONGODB_URI)
+          -JWT_SECRET $(JWT_SECRET)
+          -SENDGRID_API_KEY $(SENDGRID_API_KEY)
+          -TWILIO_ACCOUNT_SID $(TWILIO_ACCOUNT_SID)
+          -TWILIO_AUTH_TOKEN $(TWILIO_AUTH_TOKEN)
+          -CLOUDINARY_CLOUD_NAME $(CLOUDINARY_CLOUD_NAME)
+          -CLOUDINARY_API_KEY $(CLOUDINARY_API_KEY)
+          -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)
+      displayName: 'Deploy Backend to App Service'
+    
+    # Success Message
+    - script: |
+        echo "✅ Pipeline completed successfully!"
+        echo "Frontend URL: https://inspect-connect-test-fyanc3gpfacngbau.canadacentral-01.azurewebsites.net"
+        echo "Backend URL: https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net"
+      displayName: 'Pipeline Status and URLs'
