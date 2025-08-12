@@ -40,19 +40,31 @@ stages:
         which tsc
       displayName: 'Setup Node.js and TypeScript'
     
+    # Install Frontend Dependencies
+    - script: |
+        echo "Installing Frontend Dependencies..."
+        cd client
+        npm ci
+      displayName: 'Install Frontend Dependencies'
+    
     # Build Frontend
     - script: |
         echo "Building Frontend..."
         cd client
-        npm ci
         npm run build
       displayName: 'Build Frontend'
+    
+    # Install Backend Dependencies
+    - script: |
+        echo "Installing Backend Dependencies..."
+        cd ../server
+        npm ci
+      displayName: 'Install Backend Dependencies'
     
     # Build Backend
     - script: |
         echo "Building Backend..."
         cd ../server
-        npm ci
         npm run build
       displayName: 'Build Backend'
     
