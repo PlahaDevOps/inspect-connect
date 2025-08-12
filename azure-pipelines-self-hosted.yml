@@ -1,9 +1,7 @@
-# Self-hosted agent pipeline for Inspect Connect
+# Self-hosted agent pipeline for Inspect Connect (with caching)
 
 trigger:
-  branches:
-    include:
-      - main
+  branches: { include: [ main ] }
   paths:
     include:
       - client/*
@@ -12,98 +10,137 @@ trigger:
 
 variables:
   nodeVersion: '20.x'
+  npmCacheDir: '$(Pipeline.Workspace)/.npm'   # shared npm cache across steps
 
 stages:
 - stage: BuildAndDeploy
-  displayName: 'Build and Deploy'
+  displayName: Build and Deploy
   jobs:
   - job: BuildAndDeployAll
-    displayName: 'Build and Deploy Everything'
+    displayName: Build and Deploy Everything
     pool:
       name: 'inspect-connect-agents'
       demands:
         - agent.name -equals inspect-connect-mac-agent
 
     steps:
-    # Install Node.js via NodeTool
+    # ---- Tooling -----------------------------------------------------------
     - task: NodeTool@0
+      inputs: { versionSpec: $(nodeVersion) }
+      displayName: Use Node.js $(nodeVersion)
+
+    - script: |
+        node -v
+        npm -v
+        npm i -g typescript
+        tsc -v
+      displayName: Verify Node & TypeScript
+
+    # ---- FRONTEND ----------------------------------------------------------
+    # Cache npm cache dir (for tarballs) + node_modules
+    - task: Cache@2
+      displayName: Restore npm cache (client)
       inputs:
-        versionSpec: $(nodeVersion)
-      displayName: 'Use Node.js $(nodeVersion)'
+        key: 'npm-cache | $(Agent.OS) | client'
+        restoreKeys: 'npm-cache | $(Agent.OS)'
+        path: '$(npmCacheDir)'
+
+    - task: Cache@2
+      displayName: Restore node_modules (client)
+      inputs:
+        key: |
+          node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package-lock.json
+        restoreKeys: |
+          node_modules | $(Agent.OS) | client
+        path: '$(Build.SourcesDirectory)/client/node_modules'
 
     - script: |
-        node --version
-        npm --version
-        npm install -g typescript
-        tsc --version
-      displayName: 'Verify Node.js & TypeScript'
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --no-audit --prefer-offline || npm install --legacy-peer-deps --no-audit --prefer-offline
+      workingDirectory: $(Build.SourcesDirectory)/client
+      displayName: Install Frontend Dependencies
 
-    # Install Frontend Dependencies
-    - script: |
-        cd client
-        npm ci
-      displayName: 'Install Frontend Dependencies'
-      workingDirectory: $(System.DefaultWorkingDirectory)/client
+    - task: Cache@2
+      displayName: Save node_modules (client)
+      inputs:
+        key: |
+          node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package-lock.json
+        path: '$(Build.SourcesDirectory)/client/node_modules'
 
-    # Optional: Type-check without failing build
-    - script: |
-        cd client
-        npx tsc --noEmit || true
-      displayName: 'Type Check (Non-blocking)'
+    # Optional typecheck (won’t fail the build)
+    - script: npx tsc --noEmit || true
+      workingDirectory: $(Build.SourcesDirectory)/client
+      displayName: Type Check (non-blocking)
       continueOnError: true
-      workingDirectory: $(System.DefaultWorkingDirectory)/client
 
-    # Build Frontend
-    - script: |
-        cd client
-        npm run build
-      displayName: 'Build Frontend'
-      workingDirectory: $(System.DefaultWorkingDirectory)/client
+    - script: npx vite build
+      workingDirectory: $(Build.SourcesDirectory)/client
+      displayName: Build Frontend (Vite)
 
-    # Deploy Frontend
     - task: AzureWebApp@1
+      displayName: Deploy Frontend to App Service
       inputs:
         azureSubscription: 'inspect-connect-acr'
         appName: 'inspect-connect-test'
-        package: '$(System.DefaultWorkingDirectory)/client/dist'
+        package: '$(Build.SourcesDirectory)/client/dist'
         appSettings: |
           -VITE_API_URL https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net
           -WEBSITES_PORT 80
-          -PM2_SERVE_PATH /home/site/wwwroot
         startupCommand: 'pm2 serve /home/site/wwwroot --spa --no-daemon'
-      displayName: 'Deploy Frontend to App Service'
 
-    # Install Backend Dependencies
-    - script: |
-        cd server
-        npm ci
-      displayName: 'Install Backend Dependencies'
-      workingDirectory: $(System.DefaultWorkingDirectory)/server
-
-    # Build Backend
-    - script: |
-        cd server
-        npm run build
-      displayName: 'Build Backend'
-      workingDirectory: $(System.DefaultWorkingDirectory)/server
-
-    # Archive Backend for Deployment
-    - task: ArchiveFiles@2
+    # ---- BACKEND -----------------------------------------------------------
+    - task: Cache@2
+      displayName: Restore npm cache (server)
       inputs:
-        rootFolderOrFile: '$(System.DefaultWorkingDirectory)/server'
+        key: 'npm-cache | $(Agent.OS) | server'
+        restoreKeys: 'npm-cache | $(Agent.OS)'
+        path: '$(npmCacheDir)'
+
+    - task: Cache@2
+      displayName: Restore node_modules (server)
+      inputs:
+        key: |
+          node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package-lock.json
+        restoreKeys: |
+          node_modules | $(Agent.OS) | server
+        path: '$(Build.SourcesDirectory)/server/node_modules'
+
+    - script: |
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --no-audit --prefer-offline || npm install --legacy-peer-deps --no-audit --prefer-offline
+      workingDirectory: $(Build.SourcesDirectory)/server
+      displayName: Install Backend Dependencies
+
+    - task: Cache@2
+      displayName: Save node_modules (server)
+      inputs:
+        key: |
+          node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package-lock.json
+        path: '$(Build.SourcesDirectory)/server/node_modules'
+
+    - script: npm run build
+      workingDirectory: $(Build.SourcesDirectory)/server
+      displayName: Build Backend
+
+    # ship entire server so App Service has package.json + dist
+    - task: ArchiveFiles@2
+      displayName: Zip server app
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/server'
         includeRootFolder: false
         archiveType: zip
         archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
         replaceExistingArchive: true
-      displayName: 'Archive Backend'
 
-    # Deploy Backend
     - task: AzureWebApp@1
+      displayName: Deploy Backend to App Service
       inputs:
         azureSubscription: 'inspect-connect-acr'
         appName: 'inspect-connect-api-test'
         package: '$(Build.ArtifactStagingDirectory)/server.zip'
         appSettings: |
+          -SCM_DO_BUILD_DURING_DEPLOYMENT true
+          -WEBSITE_NODE_DEFAULT_VERSION ~20
           -MONGODB_URI $(MONGODB_URI)
           -JWT_SECRET $(JWT_SECRET)
           -SENDGRID_API_KEY $(SENDGRID_API_KEY)
@@ -112,13 +149,11 @@ stages:
           -CLOUDINARY_CLOUD_NAME $(CLOUDINARY_CLOUD_NAME)
           -CLOUDINARY_API_KEY $(CLOUDINARY_API_KEY)
           -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)
-          -SCM_DO_BUILD_DURING_DEPLOYMENT true
-          -WEBSITE_NODE_DEFAULT_VERSION ~20
-      displayName: 'Deploy Backend to App Service'
+        # Or start explicitly:
+        # startupCommand: 'node dist/server.js'
 
-    # Success Message
     - script: |
-        echo "✅ Pipeline completed successfully!"
-        echo "Frontend URL: https://inspect-connect-test-fyanc3gpfacngbau.canadacentral-01.azurewebsites.net"
-        echo "Backend URL: https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net"
-      displayName: 'Pipeline Status and URLs'
+        echo "✅ Pipeline completed."
+        echo "FE: https://inspect-connect-test-fyanc3gpfacngbau.canadacentral-01.azurewebsites.net"
+        echo "API: https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net"
+      displayName: Done
