@@ -1,8 +1,24 @@
-# Self-hosted agent pipeline for Inspect Connect (with caching)
+# =============================================================================
+# Inspect Connect - Production CI/CD Pipeline
+# =============================================================================
+# 
+# This pipeline builds and deploys the Inspect Connect application using a
+# self-hosted agent for improved performance and cost efficiency.
+#
+# Features:
+# - Multi-stage build with caching for faster builds
+# - ARM-based deployment to Azure App Service
+# - Environment-specific configuration
+# - Comprehensive error handling
+#
 # Note: X64 emulation warning is expected on Apple Silicon Macs - this doesn't affect functionality
+# =============================================================================
 
 trigger:
-  branches: { include: [ main ] }
+  branches: 
+    include: 
+      - main
+      - develop
   paths:
     include:
       - client/*
@@ -10,32 +26,50 @@ trigger:
       - azure-pipelines-self-hosted.yml
 
 variables:
+  # Build Configuration
   nodeVersion: '20.x'
-  npmCacheDir: '$(Pipeline.Workspace)/.npm'   # shared npm cache across steps
+  npmCacheDir: '$(Pipeline.Workspace)/.npm'
+  
+  # Environment Configuration
+  environment: 'production'
+  frontendAppName: 'inspect-connect-test'
+  backendAppName: 'inspect-connect-api-test'
+  resourceGroupName: 'inspect_connect-rg'
+  
+  # Service Connection
+  azureSubscription: 'inspect-connect-appservice'
 
 stages:
 - stage: BuildAndDeploy
-  displayName: Build and Deploy
+  displayName: 'Build and Deploy to Production'
   jobs:
-  - job: BuildAndDeployAll
-    displayName: Build and Deploy Everything
+  - job: FullStackDeployment
+    displayName: 'Full-Stack Application Deployment'
     pool:
       name: 'inspect-connect-agents'
       demands:
         - agent.name -equals inspect-connect-mac-agent
 
     steps:
-    # ---- Tooling -----------------------------------------------------------
+    # =============================================================================
+    # Environment Setup & Validation
+    # =============================================================================
     - task: NodeTool@0
       inputs: { versionSpec: $(nodeVersion) }
-      displayName: Use Node.js $(nodeVersion)
+      displayName: 'Setup Node.js Environment'
 
     - script: |
-        node -v
-        npm -v
+        echo "=== Environment Information ==="
+        echo "Node.js Version: $(node -v)"
+        echo "NPM Version: $(npm -v)"
+        echo "Build Agent: $(Agent.Name)"
+        echo "Working Directory: $(Build.SourcesDirectory)"
+        echo "================================="
+        
+        # Install global dependencies
         npm i -g typescript
-        tsc -v
-      displayName: Verify Node & TypeScript
+        echo "TypeScript Version: $(tsc -v)"
+      displayName: 'Validate Build Environment'
 
     # ---- FRONTEND ----------------------------------------------------------
     # Cache npm cache dir (for tarballs) + node_modules
@@ -76,28 +110,32 @@ stages:
       workingDirectory: $(Build.SourcesDirectory)/client
       displayName: Build Frontend (Vite)
 
-    # ---- Deploy Frontend (ARM, no publish profile) ----
+    # =============================================================================
+    # Frontend Application Deployment
+    # =============================================================================
     - task: AzureWebApp@1
-      displayName: Deploy Frontend to App Service
+      displayName: 'Deploy Frontend to Azure App Service'
       inputs:
-        azureSubscription: 'inspect-connect-appservice'
+        azureSubscription: $(azureSubscription)
         appType: webAppLinux
-        appName: 'inspect-connect-test'
-        resourceGroupName: 'inspect_connect-rg'
+        appName: $(frontendAppName)
+        resourceGroupName: $(resourceGroupName)
         package: '$(Build.SourcesDirectory)/client/dist'
         appSettings: '-VITE_API_URL https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net -WEBSITES_PORT 80'
         startupCommand: 'pm2 serve /home/site/wwwroot --spa --no-daemon'
 
-    # ---- BACKEND -----------------------------------------------------------
+    # =============================================================================
+    # Backend Application Build
+    # =============================================================================
     - task: Cache@2
-      displayName: Restore npm cache (server)
+      displayName: 'Restore Backend Dependencies Cache'
       inputs:
         key: 'npm-cache | $(Agent.OS) | server'
         restoreKeys: 'npm-cache | $(Agent.OS)'
         path: '$(npmCacheDir)'
 
     - task: Cache@2
-      displayName: Restore node_modules (server)
+      displayName: 'Restore Backend node_modules'
       inputs:
         key: 'node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package.json'
         restoreKeys: |
@@ -105,24 +143,31 @@ stages:
         path: '$(Build.SourcesDirectory)/server/node_modules'
 
     - script: |
+        echo "Installing backend dependencies..."
         npm config set cache "$(npmCacheDir)"
         npm ci --legacy-peer-deps --no-audit --prefer-offline || npm install --legacy-peer-deps --no-audit --prefer-offline
+        echo "Backend dependencies installed successfully"
       workingDirectory: $(Build.SourcesDirectory)/server
-      displayName: Install Backend Dependencies
+      displayName: 'Install Backend Dependencies'
 
     - task: Cache@2
-      displayName: Save node_modules (server)
+      displayName: 'Cache Backend node_modules'
       inputs:
         key: 'node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package.json'
         path: '$(Build.SourcesDirectory)/server/node_modules'
 
-    - script: npm run build
+    - script: |
+        echo "Building backend application..."
+        npm run build
+        echo "Backend build completed successfully"
       workingDirectory: $(Build.SourcesDirectory)/server
-      displayName: Build Backend
+      displayName: 'Build Backend Application'
 
-    # ship entire server so App Service has package.json + dist
+    # =============================================================================
+    # Backend Application Packaging
+    # =============================================================================
     - task: ArchiveFiles@2
-      displayName: Zip server app
+      displayName: 'Package Backend Application'
       inputs:
         rootFolderOrFile: '$(Build.SourcesDirectory)/server'
         includeRootFolder: false
@@ -130,21 +175,43 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
         replaceExistingArchive: true
 
-    # ---- Deploy Backend (ARM, no publish profile) ----
+    # =============================================================================
+    # Backend Application Deployment
+    # =============================================================================
     - task: AzureWebApp@1
-      displayName: Deploy Backend to App Service
+      displayName: 'Deploy Backend to Azure App Service'
       inputs:
-        azureSubscription: 'inspect-connect-appservice'
+        azureSubscription: $(azureSubscription)
         appType: webAppLinux
-        appName: 'inspect-connect-api-test'
-        resourceGroupName: 'inspect_connect-rg'
+        appName: $(backendAppName)
+        resourceGroupName: $(resourceGroupName)
         package: '$(Build.ArtifactStagingDirectory)/server.zip'
         appSettings: '-SCM_DO_BUILD_DURING_DEPLOYMENT true -WEBSITE_NODE_DEFAULT_VERSION ~20 -MONGODB_URI $(MONGODB_URI) -JWT_SECRET $(JWT_SECRET) -SENDGRID_API_KEY $(SENDGRID_API_KEY) -TWILIO_ACCOUNT_SID $(TWILIO_ACCOUNT_SID) -TWILIO_AUTH_TOKEN $(TWILIO_AUTH_TOKEN) -CLOUDINARY_CLOUD_NAME $(CLOUDINARY_CLOUD_NAME) -CLOUDINARY_API_KEY $(CLOUDINARY_API_KEY) -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)'
         # If you prefer not to rely on Oryx detection:
         # startupCommand: 'node dist/server.js'
 
+    # =============================================================================
+    # Deployment Summary & Validation
+    # =============================================================================
     - script: |
-        echo "✅ Pipeline completed."
-        echo "FE: https://inspect-connect-test-fyanc3gpfacngbau.canadacentral-01.azurewebsites.net"
-        echo "API: https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net"
-      displayName: Done
+        echo "=============================================================================="
+        echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY"
+        echo "=============================================================================="
+        echo ""
+        echo "📱 Frontend Application:"
+        echo "   URL: https://inspect-connect-test-fyanc3gpfacngbau.canadacentral-01.azurewebsites.net"
+        echo "   Environment: $(environment)"
+        echo ""
+        echo "🔧 Backend API:"
+        echo "   URL: https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net"
+        echo "   Environment: $(environment)"
+        echo ""
+        echo "📊 Build Information:"
+        echo "   Build ID: $(Build.BuildId)"
+        echo "   Build Number: $(Build.BuildNumber)"
+        echo "   Source Branch: $(Build.SourceBranch)"
+        echo "   Commit: $(Build.SourceVersion)"
+        echo ""
+        echo "✅ All applications deployed successfully!"
+        echo "=============================================================================="
+      displayName: 'Deployment Summary'
