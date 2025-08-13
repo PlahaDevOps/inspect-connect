@@ -1,4 +1,5 @@
 # Self-hosted agent pipeline for Inspect Connect (with caching)
+# Note: X64 emulation warning is expected on Apple Silicon Macs - this doesn't affect functionality
 
 trigger:
   branches: { include: [ main ] }
@@ -48,8 +49,7 @@ stages:
     - task: Cache@2
       displayName: Restore node_modules (client)
       inputs:
-        key: |
-          node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package-lock.json
+        key: 'node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package.json'
         restoreKeys: |
           node_modules | $(Agent.OS) | client
         path: '$(Build.SourcesDirectory)/client/node_modules'
@@ -63,8 +63,7 @@ stages:
     - task: Cache@2
       displayName: Save node_modules (client)
       inputs:
-        key: |
-          node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package-lock.json
+        key: 'node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package.json'
         path: '$(Build.SourcesDirectory)/client/node_modules'
 
     # Optional typecheck (won’t fail the build)
@@ -100,8 +99,7 @@ stages:
     - task: Cache@2
       displayName: Restore node_modules (server)
       inputs:
-        key: |
-          node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package-lock.json
+        key: 'node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package.json'
         restoreKeys: |
           node_modules | $(Agent.OS) | server
         path: '$(Build.SourcesDirectory)/server/node_modules'
@@ -115,8 +113,7 @@ stages:
     - task: Cache@2
       displayName: Save node_modules (server)
       inputs:
-        key: |
-          node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package-lock.json
+        key: 'node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package.json'
         path: '$(Build.SourcesDirectory)/server/node_modules'
 
     - script: npm run build
