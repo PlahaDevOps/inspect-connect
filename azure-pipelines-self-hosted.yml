@@ -77,17 +77,19 @@ stages:
       workingDirectory: $(Build.SourcesDirectory)/client
       displayName: Build Frontend (Vite)
 
+    # ---- Deploy Frontend (ARM, no publish profile) ----
     - task: AzureWebApp@1
       displayName: Deploy Frontend to App Service
       inputs:
         azureSubscription: 'inspect-connect-appservice'
+        appType: webAppLinux
         appName: 'inspect-connect-test'
+        resourceGroupName: 'inspect_connect-rg'
         package: '$(Build.SourcesDirectory)/client/dist'
         appSettings: |
           -VITE_API_URL https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net
           -WEBSITES_PORT 80
         startupCommand: 'pm2 serve /home/site/wwwroot --spa --no-daemon'
-        usePublishProfile: true
 
     # ---- BACKEND -----------------------------------------------------------
     - task: Cache@2
@@ -133,13 +135,15 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
         replaceExistingArchive: true
 
+    # ---- Deploy Backend (ARM, no publish profile) ----
     - task: AzureWebApp@1
       displayName: Deploy Backend to App Service
       inputs:
         azureSubscription: 'inspect-connect-appservice'
+        appType: webAppLinux
         appName: 'inspect-connect-api-test'
+        resourceGroupName: 'inspect_connect-rg'
         package: '$(Build.ArtifactStagingDirectory)/server.zip'
-        usePublishProfile: true
         appSettings: |
           -SCM_DO_BUILD_DURING_DEPLOYMENT true
           -WEBSITE_NODE_DEFAULT_VERSION ~20
@@ -151,7 +155,7 @@ stages:
           -CLOUDINARY_CLOUD_NAME $(CLOUDINARY_CLOUD_NAME)
           -CLOUDINARY_API_KEY $(CLOUDINARY_API_KEY)
           -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)
-        # Or start explicitly:
+        # If you prefer not to rely on Oryx detection:
         # startupCommand: 'node dist/server.js'
 
     - script: |
