@@ -87,8 +87,8 @@ stages:
         resourceGroupName: 'inspect_connect-rg'
         package: '$(Build.SourcesDirectory)/client/dist'
         appSettings: |
-          -VITE_API_URL https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net
-          -WEBSITES_PORT 80
+          VITE_API_URL=https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net
+          WEBSITES_PORT=80
         startupCommand: 'pm2 serve /home/site/wwwroot --spa --no-daemon'
 
     # ---- BACKEND -----------------------------------------------------------
@@ -145,16 +145,16 @@ stages:
         resourceGroupName: 'inspect_connect-rg'
         package: '$(Build.ArtifactStagingDirectory)/server.zip'
         appSettings: |
-          -SCM_DO_BUILD_DURING_DEPLOYMENT true
-          -WEBSITE_NODE_DEFAULT_VERSION ~20
-          -MONGODB_URI $(MONGODB_URI)
-          -JWT_SECRET $(JWT_SECRET)
-          -SENDGRID_API_KEY $(SENDGRID_API_KEY)
-          -TWILIO_ACCOUNT_SID $(TWILIO_ACCOUNT_SID)
-          -TWILIO_AUTH_TOKEN $(TWILIO_AUTH_TOKEN)
-          -CLOUDINARY_CLOUD_NAME $(CLOUDINARY_CLOUD_NAME)
-          -CLOUDINARY_API_KEY $(CLOUDINARY_API_KEY)
-          -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)
+          SCM_DO_BUILD_DURING_DEPLOYMENT=true
+          WEBSITE_NODE_DEFAULT_VERSION=~20
+          MONGODB_URI=$(MONGODB_URI)
+          JWT_SECRET=$(JWT_SECRET)
+          SENDGRID_API_KEY=$(SENDGRID_API_KEY)
+          TWILIO_ACCOUNT_SID=$(TWILIO_ACCOUNT_SID)
+          TWILIO_AUTH_TOKEN=$(TWILIO_AUTH_TOKEN)
+          CLOUDINARY_CLOUD_NAME=$(CLOUDINARY_CLOUD_NAME)
+          CLOUDINARY_API_KEY=$(CLOUDINARY_API_KEY)
+          CLOUDINARY_API_SECRET=$(CLOUDINARY_API_SECRET)
         # If you prefer not to rely on Oryx detection:
         # startupCommand: 'node dist/server.js'
 
