@@ -112,6 +112,12 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/frontend.zip'
         replaceExistingArchive: true
 
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Frontend Artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+        artifact: 'frontend'
+
 # =============================================================================
 # Stage 3: Frontend Deployment
 # =============================================================================
@@ -124,6 +130,36 @@ stages:
       demands:
         - agent.name -equals inspect-connect-mac-agent
     steps:
+    - download: current
+      artifact: 'frontend'
+      
+    - script: |
+        echo "=== Frontend Pre-Deployment Sanity Check ==="
+        echo "1. Checking Pipeline Workspace:"
+        echo "   Workspace: $(Pipeline.Workspace)"
+        echo "   Agent: $(Agent.Name)"
+        echo ""
+        echo "2. Checking Frontend Artifact:"
+        ls -lah $(Pipeline.Workspace)/frontend/ || echo "❌ Frontend directory not found!"
+        echo ""
+        echo "3. Verifying frontend.zip:"
+        if test -f $(Pipeline.Workspace)/frontend/frontend.zip; then
+          echo "   ✅ frontend.zip exists"
+          echo "   📁 Size: $(ls -lh $(Pipeline.Workspace)/frontend/frontend.zip | awk '{print $5}')"
+          echo "   📅 Modified: $(ls -lh $(Pipeline.Workspace)/frontend/frontend.zip | awk '{print $6, $7, $8}')"
+        else
+          echo "   ❌ frontend.zip NOT found!"
+          exit 1
+        fi
+        echo ""
+        echo "4. Checking Azure CLI:"
+        az --version || echo "❌ Azure CLI not available!"
+        echo ""
+        echo "5. Checking Azure Subscription:"
+        az account show --query "{name:name, id:id}" -o table || echo "❌ Azure authentication failed!"
+        echo "==============================================="
+      displayName: 'Frontend Pre-Deployment Sanity Check'
+      
     - task: AzureCLI@2
       continueOnError: true
       displayName: 'Azure Connectivity & App Service Validation (FE)'
@@ -145,7 +181,7 @@ stages:
         appType: webAppLinux
         appName: $(frontendAppName)
         resourceGroupName: $(resourceGroupName)
-        package: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+        package: '$(Pipeline.Workspace)/frontend/frontend.zip'
         appSettings: '-WEBSITES_PORT 8080'
         startupCommand: 'pm2 serve /home/site/wwwroot 8080 --spa --no-daemon'
 
@@ -197,6 +233,12 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
         replaceExistingArchive: true
 
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Backend Artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
+        artifact: 'backend'
+
 # =============================================================================
 # Stage 5: Backend Deployment
 # =============================================================================
@@ -209,6 +251,43 @@ stages:
       demands:
         - agent.name -equals inspect-connect-mac-agent
     steps:
+    - download: current
+      artifact: 'backend'
+      
+    - script: |
+        echo "=== Backend Pre-Deployment Sanity Check ==="
+        echo "1. Checking Pipeline Workspace:"
+        echo "   Workspace: $(Pipeline.Workspace)"
+        echo "   Agent: $(Agent.Name)"
+        echo ""
+        echo "2. Checking Backend Artifact:"
+        ls -lah $(Pipeline.Workspace)/backend/ || echo "❌ Backend directory not found!"
+        echo ""
+        echo "3. Verifying server.zip:"
+        if test -f $(Pipeline.Workspace)/backend/server.zip; then
+          echo "   ✅ server.zip exists"
+          echo "   📁 Size: $(ls -lh $(Pipeline.Workspace)/backend/server.zip | awk '{print $5}')"
+          echo "   📅 Modified: $(ls -lh $(Pipeline.Workspace)/backend/server.zip | awk '{print $6, $7, $8}')"
+        else
+          echo "   ❌ server.zip NOT found!"
+          exit 1
+        fi
+        echo ""
+        echo "4. Checking Azure CLI:"
+        az --version || echo "❌ Azure CLI not available!"
+        echo ""
+        echo "5. Checking Azure Subscription:"
+        az account show --query "{name:name, id:id}" -o table || echo "❌ Azure authentication failed!"
+        echo ""
+        echo "6. Checking Environment Variables:"
+        echo "   MONGODB_URI: ${MONGODB_URI:+✅ Set}${MONGODB_URI:-❌ Not set}"
+        echo "   JWT_SECRET: ${JWT_SECRET:+✅ Set}${JWT_SECRET:-❌ Not set}"
+        echo "   SENDGRID_API_KEY: ${SENDGRID_API_KEY:+✅ Set}${SENDGRID_API_KEY:-❌ Not set}"
+        echo "   TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:+✅ Set}${TWILIO_ACCOUNT_SID:-❌ Not set}"
+        echo "   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:+✅ Set}${CLOUDINARY_CLOUD_NAME:-❌ Not set}"
+        echo "==============================================="
+      displayName: 'Backend Pre-Deployment Sanity Check'
+      
     - task: AzureCLI@2
       continueOnError: true
       displayName: 'Azure Connectivity & App Service Validation (BE)'
@@ -230,7 +309,7 @@ stages:
         appType: webAppLinux
         appName: $(backendAppName)
         resourceGroupName: $(resourceGroupName)
-        package: '$(Build.ArtifactStagingDirectory)/server.zip'
+        package: '$(Pipeline.Workspace)/backend/server.zip'
         appSettings: |
           -WEBSITE_NODE_DEFAULT_VERSION ~20
           -WEBSITES_PORT 5002
