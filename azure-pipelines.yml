@@ -170,14 +170,14 @@ stages:
           - task: AzureWebApp@1
             inputs:
               azureSubscription: 'inspect-connect-subscription'
-              appName: 'inspect-connect-test'
+              appName: 'inspect-connect-test-fyanc3gpfacngbau'
               package: '$(Pipeline.Workspace)/client-build'
             displayName: 'Deploy Frontend to App Service'
           
           - task: AzureWebApp@1
             inputs:
               azureSubscription: 'inspect-connect-subscription'
-              appName: 'inspect-connect-api-test'
+              appName: 'inspect-connect-api-test-bgb3gea5c0ezfkfe'
               package: '$(Pipeline.Workspace)/server-build'
             displayName: 'Deploy Backend to App Service'
           
