@@ -1,12 +1,10 @@
 # =============================================================================
-# Inspect Connect - Production CI/CD Pipeline (Option A: build on agent)
+# Inspect Connect - CI/CD (single build job, change-aware, minimal cache)
 # =============================================================================
 
 trigger:
   branches:
-    include:
-      - main
-      - develop
+    include: [ main, develop ]
   paths:
     include:
       - client/*
@@ -14,97 +12,109 @@ trigger:
       - azure-pipelines-self-hosted.yml
 
 variables:
+  # Tooling
   nodeVersion: '20.x'
   npmCacheDir: '$(Pipeline.Workspace)/.npm'
 
+  # Environment
   environment: 'production'
-  frontendAppName: 'inspect-connect-test-fyanc3gpfacngbau'
-  backendAppName: 'inspect-connect-api-test-bgb3gea5c0ezfkfe'
+  azureSubscription: 'inspect-connect-appservice'
   resourceGroupName: 'inspect_connect-rg'
 
-  azureSubscription: 'inspect-connect-appservice'
+  # App Services (confirmed in portal)
+  frontendAppName: 'inspect-connect-test'
+  backendAppName:  'inspect-connect-api-test'
+
+  # Toggles
+  runAzureValidation: 'false'     # set 'true' when debugging
+  system.debug: 'false'           # set 'true' for verbose agent logs
 
 stages:
 # =============================================================================
-# Stage 1: Environment Setup
+# Stage 1: Build (FE then BE), with change detection
 # =============================================================================
-- stage: EnvironmentSetup
+- stage: Build
+  displayName: Build (change-aware)
   jobs:
-  - job: SetupEnvironment
+  - job: BuildAll
+    displayName: Build Frontend & Backend
     pool:
       name: 'inspect-connect-agents'
-      demands:
-        - agent.name -equals inspect-connect-mac-agent
+      demands: [ agent.name -equals inspect-connect-mac-agent ]
+
     steps:
+    - checkout: self
+      fetchDepth: 0
+
     - task: NodeTool@0
-      inputs:
-        versionSpec: $(nodeVersion)
-      displayName: 'Setup Node.js Environment'
+      inputs: { versionSpec: $(nodeVersion) }
+      displayName: Use Node.js $(nodeVersion)
 
-    - script: |
-        echo "=== Environment Information ==="
-        node -v
-        npm -v
-        echo "Agent: $(Agent.Name)"
-        echo "Working Directory: $(Build.SourcesDirectory)"
-        echo "================================="
-      displayName: 'Validate Build Environment'
+    # Detect which folders changed vs previous commit
+    - bash: |
+        set -e
+        prev=$(git rev-parse HEAD~1 || echo "")
+        echo "Prev commit: $prev"
+        changed=$(git diff --name-only ${prev:-HEAD} HEAD || true)
+        echo "Changed files:"
+        echo "$changed"
 
-# =============================================================================
-# Stage 2: Frontend Build
-# =============================================================================
-- stage: FrontendBuild
-  dependsOn: EnvironmentSetup
-  jobs:
-  - job: BuildFrontend
-    pool:
-      name: 'inspect-connect-agents'
-      demands:
-        - agent.name -equals inspect-connect-mac-agent
-    steps:
+        fe=false; be=false
+        echo "$changed" | grep -E '^client/' >/dev/null && fe=true
+        echo "$changed" | grep -E '^server/' >/dev/null && be=true
+
+        # If this is the first commit (or manual run), default to building both
+        if [ -z "$prev" ]; then fe=true; be=true; fi
+
+        echo "##vso[task.setvariable variable=buildClient;isOutput=true]$fe"
+        echo "##vso[task.setvariable variable=buildServer;isOutput=true]$be"
+        echo "Client changed? $fe  |  Server changed? $be"
+      name: detect
+      displayName: Detect changed areas
+
+    # Shared npm tarball cache (used by both apps)
     - task: Cache@2
+      displayName: Restore npm tarball cache (shared)
       inputs:
         key: 'npm-cache | $(Agent.OS)'
         path: '$(npmCacheDir)'
 
+    # ================================
+    # Frontend (only if changed)
+    # ================================
     - task: Cache@2
+      displayName: Restore node_modules (client)
+      condition: eq(variables['detect.buildClient'], 'true')
       inputs:
         key: 'node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package-lock.json'
-        restoreKeys: |
-          node_modules | $(Agent.OS) | client
+        restoreKeys: 'node_modules | $(Agent.OS) | client'
         path: '$(Build.SourcesDirectory)/client/node_modules'
 
     - script: |
-        echo "Installing frontend dependencies..."
         npm config set cache "$(npmCacheDir)"
-        npm ci --legacy-peer-deps --no-audit --prefer-offline || npm install --legacy-peer-deps --no-audit --prefer-offline
-        echo "Frontend dependencies installed successfully"
-      workingDirectory: $(Build.SourcesDirectory)/client
-      displayName: 'Install Frontend Dependencies'
+        npm ci --legacy-peer-deps --prefer-offline --no-audit
+      workingDirectory: client
+      displayName: FE: Install deps
+      condition: eq(variables['detect.buildClient'], 'true')
 
-    - task: Cache@2
-      inputs:
-        key: 'node_modules | $(Agent.OS) | client | $(Build.SourcesDirectory)/client/package-lock.json'
-        path: '$(Build.SourcesDirectory)/client/node_modules'
-
-    - script: |
-        echo "Running TypeScript type checking..."
-        npx tsc --noEmit || echo "TypeScript warnings found (non-blocking)"
-      workingDirectory: $(Build.SourcesDirectory)/client
+    - script: npx tsc --noEmit || echo "TypeScript warnings (non-blocking)"
+      workingDirectory: client
+      displayName: FE: Type check (non-blocking)
       continueOnError: true
-      displayName: 'TypeScript Type Checking'
+      condition: eq(variables['detect.buildClient'], 'true')
 
     - script: |
-        echo "Building frontend application..."
+        echo "Building frontend (Vite)…"
         npx vite build
-        echo "Frontend build completed successfully"
-      workingDirectory: $(Build.SourcesDirectory)/client
       env:
-        VITE_API_URL: "https://inspect-connect-api-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net"
-      displayName: 'Build Frontend Application'
+        VITE_API_URL: "https://$(backendAppName).canadacentral-01.azurewebsites.net"
+      workingDirectory: client
+      displayName: FE: Build (Vite)
+      condition: eq(variables['detect.buildClient'], 'true')
 
     - task: ArchiveFiles@2
-      displayName: 'Package Frontend dist'
+      displayName: FE: Package dist
+      condition: eq(variables['detect.buildClient'], 'true')
       inputs:
         rootFolderOrFile: '$(Build.SourcesDirectory)/client/dist'
         includeRootFolder: false
@@ -113,69 +123,97 @@ stages:
         replaceExistingArchive: true
 
     - task: PublishPipelineArtifact@1
-      displayName: 'Publish Frontend Artifact'
+      displayName: FE: Publish artifact
+      condition: eq(variables['detect.buildClient'], 'true')
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
         artifact: 'frontend'
 
+    # Mark FE built for downstream stages
+    - bash: echo "##vso[task.setvariable variable=feBuilt;isOutput=true]$(detect.buildClient)"
+      name: feOut
+      displayName: FE: Output flag
+
+    # ================================
+    # Backend (only if changed)
+    # ================================
+    - task: Cache@2
+      displayName: Restore node_modules (server)
+      condition: eq(variables['detect.buildServer'], 'true')
+      inputs:
+        key: 'node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package-lock.json'
+        restoreKeys: 'node_modules | $(Agent.OS) | server'
+        path: '$(Build.SourcesDirectory)/server/node_modules'
+
+    - script: |
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --prefer-offline --no-audit
+        npm run build
+        npm prune --omit=dev
+      workingDirectory: server
+      displayName: BE: Install / Build / Prune
+      condition: eq(variables['detect.buildServer'], 'true')
+
+    - task: ArchiveFiles@2
+      displayName: BE: Package app
+      condition: eq(variables['detect.buildServer'], 'true')
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/server'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
+        replaceExistingArchive: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: BE: Publish artifact
+      condition: eq(variables['detect.buildServer'], 'true')
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
+        artifact: 'backend'
+
+    # Mark BE built for downstream stages
+    - bash: echo "##vso[task.setvariable variable=beBuilt;isOutput=true]$(detect.buildServer)"
+      name: beOut
+      displayName: BE: Output flag
+
 # =============================================================================
-# Stage 3: Frontend Deployment
+# Stage 2: Frontend Deploy (runs only if FE built)
 # =============================================================================
 - stage: FrontendDeploy
-  dependsOn: FrontendBuild
+  displayName: Deploy Frontend
+  dependsOn: Build
+  condition: eq(dependencies.Build.outputs['BuildAll.feOut.feBuilt'], 'true')
   jobs:
   - job: DeployFrontend
+    displayName: Deploy Frontend
     pool:
       name: 'inspect-connect-agents'
-      demands:
-        - agent.name -equals inspect-connect-mac-agent
+      demands: [ agent.name -equals inspect-connect-mac-agent ]
+    checkout: none
     steps:
-    - download: current
-      artifact: 'frontend'
-      
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'frontend'
+        path: '$(Pipeline.Workspace)/frontend'
+
     - script: |
-        echo "=== Frontend Pre-Deployment Sanity Check ==="
-        echo "1. Checking Pipeline Workspace:"
-        echo "   Workspace: $(Pipeline.Workspace)"
-        echo "   Agent: $(Agent.Name)"
-        echo ""
-        echo "2. Checking Frontend Artifact:"
-        ls -lah $(Pipeline.Workspace)/frontend/ || echo "❌ Frontend directory not found!"
-        echo ""
-        echo "3. Verifying frontend.zip:"
-        if test -f $(Pipeline.Workspace)/frontend/frontend.zip; then
-          echo "   ✅ frontend.zip exists"
-          echo "   📁 Size: $(ls -lh $(Pipeline.Workspace)/frontend/frontend.zip | awk '{print $5}')"
-          echo "   📅 Modified: $(ls -lh $(Pipeline.Workspace)/frontend/frontend.zip | awk '{print $6, $7, $8}')"
-        else
-          echo "   ❌ frontend.zip NOT found!"
-          exit 1
-        fi
-        echo ""
-        echo "4. Checking Azure CLI:"
-        az --version || echo "❌ Azure CLI not available!"
-        echo ""
-        echo "5. Checking Azure Subscription:"
-        az account show --query "{name:name, id:id}" -o table || echo "❌ Azure authentication failed!"
-        echo "==============================================="
-      displayName: 'Frontend Pre-Deployment Sanity Check'
-      
+        ls -lah $(Pipeline.Workspace)/frontend/
+        test -f $(Pipeline.Workspace)/frontend/frontend.zip
+      displayName: FE: Verify artifact
+
     - task: AzureCLI@2
+      condition: eq(variables['runAzureValidation'], 'true')
       continueOnError: true
-      displayName: 'Azure Connectivity & App Service Validation (FE)'
+      displayName: FE: Azure validation
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          set -e
-          echo "=== Azure Connectivity Test (FE) ==="
-          az account show --output table
-          echo "Checking Frontend App Service: $(frontendAppName)"
-          az webapp show --name $(frontendAppName) --resource-group $(resourceGroupName) --query "{name:name,state:state,host:defaultHostName}" -o table
+          az webapp show -n $(frontendAppName) -g $(resourceGroupName) -o table
 
     - task: AzureWebApp@1
-      displayName: 'Deploy Frontend via ZipDeploy'
+      displayName: FE: ZipDeploy
       inputs:
         azureSubscription: $(azureSubscription)
         appType: webAppLinux
@@ -186,124 +224,43 @@ stages:
         startupCommand: 'pm2 serve /home/site/wwwroot 8080 --spa --no-daemon'
 
 # =============================================================================
-# Stage 4: Backend Build
-# =============================================================================
-- stage: BackendBuild
-  dependsOn: EnvironmentSetup
-  jobs:
-  - job: BuildBackend
-    pool:
-      name: 'inspect-connect-agents'
-      demands:
-        - agent.name -equals inspect-connect-mac-agent
-    steps:
-    - task: Cache@2
-      inputs:
-        key: 'npm-cache | $(Agent.OS)'
-        path: '$(npmCacheDir)'
-
-    - task: Cache@2
-      inputs:
-        key: 'node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package-lock.json'
-        restoreKeys: |
-          node_modules | $(Agent.OS) | server
-        path: '$(Build.SourcesDirectory)/server/node_modules'
-
-    - script: |
-        echo "Installing backend dependencies and building..."
-        npm config set cache "$(npmCacheDir)"
-        npm ci --legacy-peer-deps --no-audit --prefer-offline || npm install --legacy-peer-deps --no-audit --prefer-offline
-        npm run build
-        npm prune --omit=dev
-        echo "Backend build completed successfully"
-      workingDirectory: $(Build.SourcesDirectory)/server
-      displayName: 'Install/Build/Prune Backend'
-
-    - task: Cache@2
-      inputs:
-        key: 'node_modules | $(Agent.OS) | server | $(Build.SourcesDirectory)/server/package-lock.json'
-        path: '$(Build.SourcesDirectory)/server/node_modules'
-
-    - task: ArchiveFiles@2
-      displayName: 'Package Backend Application'
-      inputs:
-        rootFolderOrFile: '$(Build.SourcesDirectory)/server'
-        includeRootFolder: false
-        archiveType: zip
-        archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
-        replaceExistingArchive: true
-
-    - task: PublishPipelineArtifact@1
-      displayName: 'Publish Backend Artifact'
-      inputs:
-        targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
-        artifact: 'backend'
-
-# =============================================================================
-# Stage 5: Backend Deployment
+# Stage 3: Backend Deploy (runs only if BE built)
 # =============================================================================
 - stage: BackendDeploy
-  dependsOn: BackendBuild
+  displayName: Deploy Backend
+  dependsOn: Build
+  condition: eq(dependencies.Build.outputs['BuildAll.beOut.beBuilt'], 'true')
   jobs:
   - job: DeployBackend
+    displayName: Deploy Backend
     pool:
       name: 'inspect-connect-agents'
-      demands:
-        - agent.name -equals inspect-connect-mac-agent
+      demands: [ agent.name -equals inspect-connect-mac-agent ]
+    checkout: none
     steps:
-    - download: current
-      artifact: 'backend'
-      
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'backend'
+        path: '$(Pipeline.Workspace)/backend'
+
     - script: |
-        echo "=== Backend Pre-Deployment Sanity Check ==="
-        echo "1. Checking Pipeline Workspace:"
-        echo "   Workspace: $(Pipeline.Workspace)"
-        echo "   Agent: $(Agent.Name)"
-        echo ""
-        echo "2. Checking Backend Artifact:"
-        ls -lah $(Pipeline.Workspace)/backend/ || echo "❌ Backend directory not found!"
-        echo ""
-        echo "3. Verifying server.zip:"
-        if test -f $(Pipeline.Workspace)/backend/server.zip; then
-          echo "   ✅ server.zip exists"
-          echo "   📁 Size: $(ls -lh $(Pipeline.Workspace)/backend/server.zip | awk '{print $5}')"
-          echo "   📅 Modified: $(ls -lh $(Pipeline.Workspace)/backend/server.zip | awk '{print $6, $7, $8}')"
-        else
-          echo "   ❌ server.zip NOT found!"
-          exit 1
-        fi
-        echo ""
-        echo "4. Checking Azure CLI:"
-        az --version || echo "❌ Azure CLI not available!"
-        echo ""
-        echo "5. Checking Azure Subscription:"
-        az account show --query "{name:name, id:id}" -o table || echo "❌ Azure authentication failed!"
-        echo ""
-        echo "6. Checking Environment Variables:"
-        echo "   MONGODB_URI: ${MONGODB_URI:+✅ Set}${MONGODB_URI:-❌ Not set}"
-        echo "   JWT_SECRET: ${JWT_SECRET:+✅ Set}${JWT_SECRET:-❌ Not set}"
-        echo "   SENDGRID_API_KEY: ${SENDGRID_API_KEY:+✅ Set}${SENDGRID_API_KEY:-❌ Not set}"
-        echo "   TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:+✅ Set}${TWILIO_ACCOUNT_SID:-❌ Not set}"
-        echo "   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:+✅ Set}${CLOUDINARY_CLOUD_NAME:-❌ Not set}"
-        echo "==============================================="
-      displayName: 'Backend Pre-Deployment Sanity Check'
-      
+        ls -lah $(Pipeline.Workspace)/backend/
+        test -f $(Pipeline.Workspace)/backend/server.zip
+      displayName: BE: Verify artifact
+
     - task: AzureCLI@2
+      condition: eq(variables['runAzureValidation'], 'true')
       continueOnError: true
-      displayName: 'Azure Connectivity & App Service Validation (BE)'
+      displayName: BE: Azure validation
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          set -e
-          echo "=== Azure Connectivity Test (BE) ==="
-          az account show --output table
-          echo "Checking Backend App Service: $(backendAppName)"
-          az webapp show --name $(backendAppName) --resource-group $(resourceGroupName) --query "{name:name,state:state,host:defaultHostName}" -o table
+          az webapp show -n $(backendAppName) -g $(resourceGroupName) -o table
 
     - task: AzureWebApp@1
-      displayName: 'Deploy Backend Zip'
+      displayName: BE: ZipDeploy
       inputs:
         azureSubscription: $(azureSubscription)
         appType: webAppLinux
@@ -325,31 +282,26 @@ stages:
         startupCommand: 'node dist/server.js'
 
 # =============================================================================
-# Stage 6: Deployment Summary
+# Stage 4: Summary (runs only if at least one deploy ran)
 # =============================================================================
 - stage: DeploymentSummary
-  dependsOn:
-    - FrontendDeploy
-    - BackendDeploy
+  displayName: Deployment Summary
+  dependsOn: [ FrontendDeploy, BackendDeploy ]
+  condition: or(
+    eq(dependencies.Build.outputs['BuildAll.feOut.feBuilt'], 'true'),
+    eq(dependencies.Build.outputs['BuildAll.beOut.beBuilt'], 'true')
+  )
   jobs:
   - job: Summary
     pool:
       name: 'inspect-connect-agents'
-      demands:
-        - agent.name -equals inspect-connect-mac-agent
+      demands: [ agent.name -equals inspect-connect-mac-agent ]
     steps:
     - script: |
         echo "=============================================================================="
-        echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY"
+        echo "🎉 DEPLOYMENT COMPLETE"
         echo "=============================================================================="
-        echo ""
-        echo "📱 Frontend:"
-        echo "   https://$(frontendAppName).canadacentral-01.azurewebsites.net"
-        echo "🔧 Backend:"
-        echo "   https://$(backendAppName).canadacentral-01.azurewebsites.net"
-        echo ""
-        echo "Env: $(environment)"
-        echo "Build ID: $(Build.BuildId)  Number: $(Build.BuildNumber)"
-        echo "Branch: $(Build.SourceBranch)  Commit: $(Build.SourceVersion)"
-        echo "=============================================================================="
-      displayName: 'Deployment Summary'
+        echo "Frontend URL: https://$(frontendAppName).canadacentral-01.azurewebsites.net"
+        echo "Backend  URL: https://$(backendAppName).canadacentral-01.azurewebsites.net"
+        echo "Env: $(environment) | Build: $(Build.BuildNumber)"
+      displayName: Summary
