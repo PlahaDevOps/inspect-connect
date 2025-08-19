@@ -94,16 +94,16 @@ stages:
         artifact: 'frontend'
         path: '$(Pipeline.Workspace)/frontend'
 
-    - task: AzureWebApp@1
+    - task: AzureCLI@2
       displayName: 'FE: ZipDeploy'
       inputs:
-        azureSubscription: $(azureSubscription)
-        appType: webAppLinux
-        appName: $(frontendAppName)
-        resourceGroupName: $(resourceGroupName)
-        package: '$(Pipeline.Workspace)/frontend/frontend.zip'
-        appSettings: '-WEBSITES_PORT 8080'
-        startupCommand: 'pm2 serve /home/site/wwwroot 8080 --spa --no-daemon'
+        azureSubscription: 'inspect-connect-appservice'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(frontendAppName) --src "$(Pipeline.Workspace)/frontend/frontend.zip"
+          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(frontendAppName) --settings WEBSITES_PORT=8080
+          az webapp config set --resource-group $(resourceGroupName) --name $(frontendAppName) --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
 
 - stage: BackendDeploy
   displayName: Deploy Backend
@@ -118,27 +118,16 @@ stages:
         artifact: 'backend'
         path: '$(Pipeline.Workspace)/backend'
 
-    - task: AzureWebApp@1
+    - task: AzureCLI@2
       displayName: 'BE: ZipDeploy'
       inputs:
-        azureSubscription: $(azureSubscription)
-        appType: webAppLinux
-        appName: $(backendAppName)
-        resourceGroupName: $(resourceGroupName)
-        package: '$(Pipeline.Workspace)/backend/server.zip'
-        appSettings: |
-          -WEBSITE_NODE_DEFAULT_VERSION ~20
-          -WEBSITES_PORT 5002
-          -NODE_ENV production
-          -MONGODB_URI $(MONGODB_URI)
-          -JWT_SECRET $(JWT_SECRET)
-          -SENDGRID_API_KEY $(SENDGRID_API_KEY)
-          -TWILIO_ACCOUNT_SID $(TWILIO_ACCOUNT_SID)
-          -TWILIO_AUTH_TOKEN $(TWILIO_AUTH_TOKEN)
-          -CLOUDINARY_CLOUD_NAME $(CLOUDINARY_CLOUD_NAME)
-          -CLOUDINARY_API_KEY $(CLOUDINARY_API_KEY)
-          -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)
-        startupCommand: 'node dist/server.js'
+        azureSubscription: 'inspect-connect-appservice'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(backendAppName) --src "$(Pipeline.Workspace)/backend/server.zip"
+          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(backendAppName) --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+          az webapp config set --resource-group $(resourceGroupName) --name $(backendAppName) --startup-file "node dist/server.js"
 
 - stage: DeploymentSummary
   displayName: Deployment Summary
