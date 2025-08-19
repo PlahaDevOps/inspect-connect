@@ -94,12 +94,12 @@ stages:
         npm config set cache "$(npmCacheDir)"
         npm ci --legacy-peer-deps --prefer-offline --no-audit
       workingDirectory: client
-      displayName: FE: Install deps
+      displayName: 'FE: Install deps'
       condition: eq(variables['detect.buildClient'], 'true')
 
     - script: npx tsc --noEmit || echo "TypeScript warnings (non-blocking)"
       workingDirectory: client
-      displayName: FE: Type check (non-blocking)
+      displayName: 'FE: Type check (non-blocking)'
       continueOnError: true
       condition: eq(variables['detect.buildClient'], 'true')
 
@@ -109,11 +109,11 @@ stages:
       env:
         VITE_API_URL: "https://$(backendAppName).canadacentral-01.azurewebsites.net"
       workingDirectory: client
-      displayName: FE: Build (Vite)
+      displayName: 'FE: Build (Vite)'
       condition: eq(variables['detect.buildClient'], 'true')
 
     - task: ArchiveFiles@2
-      displayName: FE: Package dist
+      displayName: 'FE: Package dist'
       condition: eq(variables['detect.buildClient'], 'true')
       inputs:
         rootFolderOrFile: '$(Build.SourcesDirectory)/client/dist'
@@ -123,7 +123,7 @@ stages:
         replaceExistingArchive: true
 
     - task: PublishPipelineArtifact@1
-      displayName: FE: Publish artifact
+      displayName: 'FE: Publish artifact'
       condition: eq(variables['detect.buildClient'], 'true')
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
@@ -132,7 +132,7 @@ stages:
     # Mark FE built for downstream stages
     - bash: echo "##vso[task.setvariable variable=feBuilt;isOutput=true]$(detect.buildClient)"
       name: feOut
-      displayName: FE: Output flag
+      displayName: 'FE: Output flag'
 
     # ================================
     # Backend (only if changed)
@@ -151,11 +151,11 @@ stages:
         npm run build
         npm prune --omit=dev
       workingDirectory: server
-      displayName: BE: Install / Build / Prune
+      displayName: 'BE: Install / Build / Prune'
       condition: eq(variables['detect.buildServer'], 'true')
 
     - task: ArchiveFiles@2
-      displayName: BE: Package app
+      displayName: 'BE: Package app'
       condition: eq(variables['detect.buildServer'], 'true')
       inputs:
         rootFolderOrFile: '$(Build.SourcesDirectory)/server'
@@ -165,7 +165,7 @@ stages:
         replaceExistingArchive: true
 
     - task: PublishPipelineArtifact@1
-      displayName: BE: Publish artifact
+      displayName: 'BE: Publish artifact'
       condition: eq(variables['detect.buildServer'], 'true')
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
@@ -174,7 +174,7 @@ stages:
     # Mark BE built for downstream stages
     - bash: echo "##vso[task.setvariable variable=beBuilt;isOutput=true]$(detect.buildServer)"
       name: beOut
-      displayName: BE: Output flag
+      displayName: 'BE: Output flag'
 
 # =============================================================================
 # Stage 2: Frontend Deploy (runs only if FE built)
@@ -199,12 +199,12 @@ stages:
     - script: |
         ls -lah $(Pipeline.Workspace)/frontend/
         test -f $(Pipeline.Workspace)/frontend/frontend.zip
-      displayName: FE: Verify artifact
+      displayName: 'FE: Verify artifact'
 
     - task: AzureCLI@2
       condition: eq(variables['runAzureValidation'], 'true')
       continueOnError: true
-      displayName: FE: Azure validation
+      displayName: 'FE: Azure validation'
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: bash
@@ -213,7 +213,7 @@ stages:
           az webapp show -n $(frontendAppName) -g $(resourceGroupName) -o table
 
     - task: AzureWebApp@1
-      displayName: FE: ZipDeploy
+      displayName: 'FE: ZipDeploy'
       inputs:
         azureSubscription: $(azureSubscription)
         appType: webAppLinux
@@ -246,12 +246,12 @@ stages:
     - script: |
         ls -lah $(Pipeline.Workspace)/backend/
         test -f $(Pipeline.Workspace)/backend/server.zip
-      displayName: BE: Verify artifact
+      displayName: 'BE: Verify artifact'
 
     - task: AzureCLI@2
       condition: eq(variables['runAzureValidation'], 'true')
       continueOnError: true
-      displayName: BE: Azure validation
+      displayName: 'BE: Azure validation'
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: bash
@@ -260,7 +260,7 @@ stages:
           az webapp show -n $(backendAppName) -g $(resourceGroupName) -o table
 
     - task: AzureWebApp@1
-      displayName: BE: ZipDeploy
+      displayName: 'BE: ZipDeploy'
       inputs:
         azureSubscription: $(azureSubscription)
         appType: webAppLinux
@@ -287,10 +287,7 @@ stages:
 - stage: DeploymentSummary
   displayName: Deployment Summary
   dependsOn: [ FrontendDeploy, BackendDeploy ]
-  condition: or(
-    eq(dependencies.Build.outputs['BuildAll.feOut.feBuilt'], 'true'),
-    eq(dependencies.Build.outputs['BuildAll.beOut.beBuilt'], 'true')
-  )
+  condition: or(eq(dependencies.Build.outputs['BuildAll.feOut.feBuilt'], 'true'), eq(dependencies.Build.outputs['BuildAll.beOut.beBuilt'], 'true'))
   jobs:
   - job: Summary
     pool:
