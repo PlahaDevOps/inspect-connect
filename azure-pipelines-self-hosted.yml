@@ -90,6 +90,24 @@ stages:
         archiveType: zip
         archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
         replaceExistingArchive: true
+        excludeFiles: |
+          **/*.ts
+          **/tsconfig.json
+          **/jest.config.js
+          **/tests/**
+          **/.github/**
+          **/Dockerfile*
+          **/docker-compose.yml
+          **/README.md
+          **/.gitignore
+
+    # Debug: Show zip contents
+    - script: |
+        echo "=== Backend Package Contents ==="
+        unzip -l "$(Build.ArtifactStagingDirectory)/server.zip" | head -20
+        echo "=== Package.json ==="
+        cat server/package.json | grep -E '"name"|"version"|"scripts"'
+      displayName: 'BE: Debug package contents'
 
     - task: PublishPipelineArtifact@1
       displayName: 'BE: Publish artifact'
@@ -217,7 +235,7 @@ stages:
           az webapp config set \
             --resource-group $(resourceGroupName) \
             --name $(backendAppName) \
-            --startup-file "node dist/server.js" \
+            --startup-file "node server.js" \
             --only-show-errors -o none
 
     # Resolve BE host for smoke test
