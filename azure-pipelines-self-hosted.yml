@@ -20,7 +20,7 @@ stages:
   - job: BuildAll
     displayName: Build
     pool:
-      name: 'inspect-connect-agents'   # your Mac agent's pool
+      name: 'inspect-connect-agents'
 
     steps:
     - checkout: self
@@ -105,6 +105,24 @@ stages:
           az webapp config appsettings set --resource-group $(resourceGroupName) --name $(frontendAppName) --settings WEBSITES_PORT=8080
           az webapp config set --resource-group $(resourceGroupName) --name $(frontendAppName) --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
 
+    # --- Smoke Test ---
+    - bash: |
+        set -euo pipefail
+        URL="https://$(frontendAppName).canadacentral-01.azurewebsites.net"
+        echo "Probing $URL ..."
+        for i in {1..20}; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
+            echo "Frontend reachable (HTTP $code)"
+            break
+          fi
+          echo "Attempt $i: HTTP $code; retrying..."
+          sleep 5
+        done
+        html=$(curl -fsS "$URL")
+        echo "$html" | grep -qi "<title>" || { echo "Missing <title> in HTML"; exit 1; }
+      displayName: 'FE: Smoke check'
+
 - stage: BackendDeploy
   displayName: Deploy Backend
   dependsOn: Build
@@ -128,6 +146,23 @@ stages:
           az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(backendAppName) --src "$(Pipeline.Workspace)/backend/server.zip"
           az webapp config appsettings set --resource-group $(resourceGroupName) --name $(backendAppName) --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
           az webapp config set --resource-group $(resourceGroupName) --name $(backendAppName) --startup-file "node dist/server.js"
+
+    # --- Smoke Test ---
+    - bash: |
+        set -euo pipefail
+        URL="https://$(backendAppName).canadacentral-01.azurewebsites.net/health"
+        echo "Probing $URL ..."
+        for i in {1..20}; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          if [ "$code" = "200" ]; then
+            echo "Backend healthy (HTTP 200)"
+            exit 0
+          fi
+          echo "Attempt $i: HTTP $code; retrying..."
+          sleep 5
+        done
+        echo "Backend did not become healthy"; exit 1
+      displayName: 'BE: Smoke check'
 
 - stage: DeploymentSummary
   displayName: Deployment Summary
