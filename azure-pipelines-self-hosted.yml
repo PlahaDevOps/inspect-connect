@@ -14,6 +14,9 @@ variables:
   backendAppName:  'inspect-connect-api-test'
 
 stages:
+# =========================
+# Stage 1: Build (FE & BE)
+# =========================
 - stage: Build
   displayName: Build Frontend & Backend
   jobs:
@@ -30,6 +33,19 @@ stages:
       inputs: { versionSpec: $(nodeVersion) }
       displayName: Use Node.js $(nodeVersion)
 
+    # Resolve backend default hostname for VITE_API_URL
+    - task: AzureCLI@2
+      displayName: 'Resolve BE defaultHostName'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          HOST=$(az webapp show -g $(resourceGroupName) -n $(backendAppName) --query defaultHostName -o tsv)
+          echo "Resolved backend host: $HOST"
+          echo "##vso[task.setvariable variable=BACKEND_HOST]$HOST"
+
     # --- Frontend ---
     - script: |
         set -e
@@ -39,7 +55,7 @@ stages:
       workingDirectory: client
       displayName: 'FE: Install & Build'
       env:
-        VITE_API_URL: "https://$(backendAppName).canadacentral-01.azurewebsites.net"
+        VITE_API_URL: "https://$(BACKEND_HOST)"
 
     - task: ArchiveFiles@2
       displayName: 'FE: Package dist'
@@ -81,6 +97,9 @@ stages:
         targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
         artifact: 'backend'
 
+# =========================
+# Stage 2: Frontend Deploy
+# =========================
 - stage: FrontendDeploy
   displayName: Deploy Frontend
   dependsOn: Build
@@ -95,20 +114,49 @@ stages:
         path: '$(Pipeline.Workspace)/frontend'
 
     - task: AzureCLI@2
-      displayName: 'FE: ZipDeploy'
+      displayName: 'FE: Deploy (az webapp deploy)'
       inputs:
-        azureSubscription: 'inspect-connect-appservice'
+        azureSubscription: '$(azureSubscription)'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(frontendAppName) --src "$(Pipeline.Workspace)/frontend/frontend.zip"
-          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(frontendAppName) --settings WEBSITES_PORT=8080
-          az webapp config set --resource-group $(resourceGroupName) --name $(frontendAppName) --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
+          set -euo pipefail
+          az webapp deploy \
+            --resource-group $(resourceGroupName) \
+            --name $(frontendAppName) \
+            --src-path "$(Pipeline.Workspace)/frontend/frontend.zip" \
+            --type zip \
+            --async false \
+            --restart true \
+            --only-show-errors -o none
+          az webapp config appsettings set \
+            --resource-group $(resourceGroupName) \
+            --name $(frontendAppName) \
+            --settings WEBSITES_PORT=8080 \
+            --only-show-errors -o none
+          az webapp config set \
+            --resource-group $(resourceGroupName) \
+            --name $(frontendAppName) \
+            --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon" \
+            --only-show-errors -o none
 
-    # --- Smoke Test ---
+    # Resolve FE host for smoke test
+    - task: AzureCLI@2
+      displayName: 'FE: Resolve defaultHostName'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          HOST=$(az webapp show -g $(resourceGroupName) -n $(frontendAppName) --query defaultHostName -o tsv)
+          echo "Resolved FE host: $HOST"
+          echo "##vso[task.setvariable variable=FE_HOST]$HOST"
+
+    # Smoke test (uses resolved FE_HOST)
     - bash: |
         set -euo pipefail
-        URL="https://$(frontendAppName).canadacentral-01.azurewebsites.net"
+        URL="https://$(FE_HOST)"
         echo "Probing $URL ..."
         for i in {1..20}; do
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
@@ -123,6 +171,9 @@ stages:
         echo "$html" | grep -qi "<title>" || { echo "Missing <title> in HTML"; exit 1; }
       displayName: 'FE: Smoke check'
 
+# =========================
+# Stage 3: Backend Deploy
+# =========================
 - stage: BackendDeploy
   displayName: Deploy Backend
   dependsOn: Build
@@ -137,20 +188,55 @@ stages:
         path: '$(Pipeline.Workspace)/backend'
 
     - task: AzureCLI@2
-      displayName: 'BE: ZipDeploy'
+      displayName: 'BE: Deploy (az webapp deploy)'
       inputs:
-        azureSubscription: 'inspect-connect-appservice'
+        azureSubscription: '$(azureSubscription)'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(backendAppName) --src "$(Pipeline.Workspace)/backend/server.zip"
-          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(backendAppName) --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
-          az webapp config set --resource-group $(resourceGroupName) --name $(backendAppName) --startup-file "node dist/server.js"
+          set -euo pipefail
+          az webapp deploy \
+            --resource-group $(resourceGroupName) \
+            --name $(backendAppName) \
+            --src-path "$(Pipeline.Workspace)/backend/server.zip" \
+            --type zip \
+            --async false \
+            --restart true \
+            --only-show-errors -o none
+          az webapp config appsettings set \
+            --resource-group $(resourceGroupName) \
+            --name $(backendAppName) \
+            --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production \
+                      MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" \
+                      SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
+                      TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
+                      CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" \
+                      CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
+                      CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)" \
+            --only-show-errors -o none
+          az webapp config set \
+            --resource-group $(resourceGroupName) \
+            --name $(backendAppName) \
+            --startup-file "node dist/server.js" \
+            --only-show-errors -o none
 
-    # --- Smoke Test ---
+    # Resolve BE host for smoke test
+    - task: AzureCLI@2
+      displayName: 'BE: Resolve defaultHostName'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          HOST=$(az webapp show -g $(resourceGroupName) -n $(backendAppName) --query defaultHostName -o tsv)
+          echo "Resolved BE host: $HOST"
+          echo "##vso[task.setvariable variable=BE_HOST]$HOST"
+
+    # Smoke test (uses resolved BE_HOST)
     - bash: |
         set -euo pipefail
-        URL="https://$(backendAppName).canadacentral-01.azurewebsites.net/health"
+        URL="https://$(BE_HOST)/health"
         echo "Probing $URL ..."
         for i in {1..20}; do
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
@@ -164,6 +250,9 @@ stages:
         echo "Backend did not become healthy"; exit 1
       displayName: 'BE: Smoke check'
 
+# =========================
+# Stage 4: Summary
+# =========================
 - stage: DeploymentSummary
   displayName: Deployment Summary
   dependsOn: [ FrontendDeploy, BackendDeploy ]
@@ -176,7 +265,7 @@ stages:
         echo "=============================================================================="
         echo "🎉 DEPLOYMENT COMPLETE"
         echo "=============================================================================="
-        echo "Frontend URL: https://$(frontendAppName).canadacentral-01.azurewebsites.net"
-        echo "Backend  URL: https://$(backendAppName).canadacentral-01.azurewebsites.net"
+        echo "Frontend URL (resolved at runtime)."
+        echo "Backend  URL (resolved at runtime)."
         echo "Env: $(environment) | Build: $(Build.BuildNumber)"
       displayName: Summary
