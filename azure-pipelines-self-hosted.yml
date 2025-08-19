@@ -89,24 +89,6 @@ stages:
         archiveType: zip
         archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
         replaceExistingArchive: true
-        excludeFiles: |
-          **/*.ts
-          **/tsconfig.json
-          **/jest.config.js
-          **/tests/**
-          **/.github/**
-          **/Dockerfile*
-          **/docker-compose.yml
-          **/README.md
-          **/.gitignore
-
-    # Debug: Show zip contents
-    - script: |
-        echo "=== Backend Package Contents ==="
-        unzip -l "$(Build.ArtifactStagingDirectory)/server.zip" | head -20
-        echo "=== Package.json ==="
-        cat server/package.json | grep -E '"name"|"version"|"scripts"'
-      displayName: 'BE: Debug package contents'
 
     - task: PublishPipelineArtifact@1
       displayName: 'BE: Publish artifact'
@@ -131,31 +113,15 @@ stages:
         path: '$(Pipeline.Workspace)/frontend'
 
     - task: AzureCLI@2
-      displayName: 'FE: Deploy (az webapp deploy)'
+      displayName: 'FE: ZipDeploy'
       inputs:
         azureSubscription: '$(azureSubscription)'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          set -euo pipefail
-          az webapp deploy \
-            --resource-group $(resourceGroupName) \
-            --name $(frontendAppName) \
-            --src-path "$(Pipeline.Workspace)/frontend/frontend.zip" \
-            --type zip \
-            --async false \
-            --restart true \
-            --only-show-errors -o none
-          az webapp config appsettings set \
-            --resource-group $(resourceGroupName) \
-            --name $(frontendAppName) \
-            --settings WEBSITES_PORT=8080 \
-            --only-show-errors -o none
-          az webapp config set \
-            --resource-group $(resourceGroupName) \
-            --name $(frontendAppName) \
-            --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon" \
-            --only-show-errors -o none
+          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(frontendAppName) --src "$(Pipeline.Workspace)/frontend/frontend.zip"
+          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(frontendAppName) --settings WEBSITES_PORT=8080
+          az webapp config set --resource-group $(resourceGroupName) --name $(frontendAppName) --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
 
     # Resolve FE host for smoke test
     - task: AzureCLI@2
@@ -205,37 +171,15 @@ stages:
         path: '$(Pipeline.Workspace)/backend'
 
     - task: AzureCLI@2
-      displayName: 'BE: Deploy (az webapp deploy)'
+      displayName: 'BE: ZipDeploy'
       inputs:
         azureSubscription: '$(azureSubscription)'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          set -euo pipefail
-          az webapp deploy \
-            --resource-group $(resourceGroupName) \
-            --name $(backendAppName) \
-            --src-path "$(Pipeline.Workspace)/backend/server.zip" \
-            --type zip \
-            --async false \
-            --restart true \
-            --only-show-errors -o none
-          az webapp config appsettings set \
-            --resource-group $(resourceGroupName) \
-            --name $(backendAppName) \
-            --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production \
-                      MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" \
-                      SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
-                      TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
-                      CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" \
-                      CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
-                      CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)" \
-            --only-show-errors -o none
-          az webapp config set \
-            --resource-group $(resourceGroupName) \
-            --name $(backendAppName) \
-            --startup-file "node server.js" \
-            --only-show-errors -o none
+          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(backendAppName) --src "$(Pipeline.Workspace)/backend/server.zip"
+          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(backendAppName) --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+          az webapp config set --resource-group $(resourceGroupName) --name $(backendAppName) --startup-file "node dist/server.js"
 
     # Resolve BE host for smoke test
     - task: AzureCLI@2
