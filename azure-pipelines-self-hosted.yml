@@ -14,17 +14,13 @@ variables:
   backendAppName:  'inspect-connect-api-test'
 
 stages:
-# ========================================================
-# Stage 1: Build (FE + BE always)
-# ========================================================
 - stage: Build
   displayName: Build Frontend & Backend
   jobs:
   - job: BuildAll
     displayName: Build
     pool:
-      name: 'inspect-connect-agents'
-      demands: [ agent.name -equals inspect-connect-mac-agent ]
+      name: 'inspect-connect-agents'   # your Mac agent's pool
 
     steps:
     - checkout: self
@@ -36,11 +32,14 @@ stages:
 
     # --- Frontend ---
     - script: |
+        set -e
         npm config set cache "$(npmCacheDir)"
-        npm ci --legacy-peer-deps --prefer-offline --no-audit
-        npx vite build
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        npm run build || npx vite build
       workingDirectory: client
       displayName: 'FE: Install & Build'
+      env:
+        VITE_API_URL: "https://$(backendAppName).canadacentral-01.azurewebsites.net"
 
     - task: ArchiveFiles@2
       displayName: 'FE: Package dist'
@@ -59,8 +58,9 @@ stages:
 
     # --- Backend ---
     - script: |
+        set -e
         npm config set cache "$(npmCacheDir)"
-        npm ci --legacy-peer-deps --prefer-offline --no-audit
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
         npm run build
         npm prune --omit=dev
       workingDirectory: server
@@ -81,9 +81,6 @@ stages:
         targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
         artifact: 'backend'
 
-# ========================================================
-# Stage 2: Frontend Deploy
-# ========================================================
 - stage: FrontendDeploy
   displayName: Deploy Frontend
   dependsOn: Build
@@ -91,7 +88,6 @@ stages:
   - job: DeployFrontend
     pool:
       name: 'inspect-connect-agents'
-      demands: [ agent.name -equals inspect-connect-mac-agent ]
     steps:
     - task: DownloadPipelineArtifact@2
       inputs:
@@ -109,9 +105,6 @@ stages:
         appSettings: '-WEBSITES_PORT 8080'
         startupCommand: 'pm2 serve /home/site/wwwroot 8080 --spa --no-daemon'
 
-# ========================================================
-# Stage 3: Backend Deploy
-# ========================================================
 - stage: BackendDeploy
   displayName: Deploy Backend
   dependsOn: Build
@@ -119,7 +112,6 @@ stages:
   - job: DeployBackend
     pool:
       name: 'inspect-connect-agents'
-      demands: [ agent.name -equals inspect-connect-mac-agent ]
     steps:
     - task: DownloadPipelineArtifact@2
       inputs:
@@ -148,9 +140,6 @@ stages:
           -CLOUDINARY_API_SECRET $(CLOUDINARY_API_SECRET)
         startupCommand: 'node dist/server.js'
 
-# ========================================================
-# Stage 4: Summary
-# ========================================================
 - stage: DeploymentSummary
   displayName: Deployment Summary
   dependsOn: [ FrontendDeploy, BackendDeploy ]
@@ -158,7 +147,6 @@ stages:
   - job: Summary
     pool:
       name: 'inspect-connect-agents'
-      demands: [ agent.name -equals inspect-connect-mac-agent ]
     steps:
     - script: |
         echo "=============================================================================="
