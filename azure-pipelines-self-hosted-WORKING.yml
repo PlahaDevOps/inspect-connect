@@ -1,0 +1,147 @@
+trigger:
+  branches:
+    include: [ main, develop ]
+
+variables:
+  nodeVersion: '20.x'
+  npmCacheDir: '$(Pipeline.Workspace)/.npm'
+
+  environment: 'production'
+  azureSubscription: 'inspect-connect-appservice'
+  resourceGroupName: 'inspect_connect-rg'
+
+  frontendAppName: 'inspect-connect-test'
+  backendAppName:  'inspect-connect-api-test'
+
+stages:
+- stage: Build
+  displayName: Build Frontend & Backend
+  jobs:
+  - job: BuildAll
+    displayName: Build
+    pool:
+      name: 'inspect-connect-agents'   # your Mac agent's pool
+
+    steps:
+    - checkout: self
+      fetchDepth: 0
+
+    - task: NodeTool@0
+      inputs: { versionSpec: $(nodeVersion) }
+      displayName: Use Node.js $(nodeVersion)
+
+    # --- Frontend ---
+    - script: |
+        set -e
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        npm run build || npx vite build
+      workingDirectory: client
+      displayName: 'FE: Install & Build'
+      env:
+        VITE_API_URL: "https://$(backendAppName).canadacentral-01.azurewebsites.net"
+
+    - task: ArchiveFiles@2
+      displayName: 'FE: Package dist'
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/client/dist'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+        replaceExistingArchive: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'FE: Publish artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+        artifact: 'frontend'
+
+    # --- Backend ---
+    - script: |
+        set -e
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        npm run build
+        npm prune --omit=dev
+      workingDirectory: server
+      displayName: 'BE: Install & Build'
+
+    - task: ArchiveFiles@2
+      displayName: 'BE: Package app'
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/server'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
+        replaceExistingArchive: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'BE: Publish artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
+        artifact: 'backend'
+
+- stage: FrontendDeploy
+  displayName: Deploy Frontend
+  dependsOn: Build
+  jobs:
+  - job: DeployFrontend
+    pool:
+      name: 'inspect-connect-agents'
+    steps:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'frontend'
+        path: '$(Pipeline.Workspace)/frontend'
+
+    - task: AzureCLI@2
+      displayName: 'FE: ZipDeploy'
+      inputs:
+        azureSubscription: 'inspect-connect-appservice'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(frontendAppName) --src "$(Pipeline.Workspace)/frontend/frontend.zip"
+          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(frontendAppName) --settings WEBSITES_PORT=8080
+          az webapp config set --resource-group $(resourceGroupName) --name $(frontendAppName) --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
+
+- stage: BackendDeploy
+  displayName: Deploy Backend
+  dependsOn: Build
+  jobs:
+  - job: DeployBackend
+    pool:
+      name: 'inspect-connect-agents'
+    steps:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'backend'
+        path: '$(Pipeline.Workspace)/backend'
+
+    - task: AzureCLI@2
+      displayName: 'BE: ZipDeploy'
+      inputs:
+        azureSubscription: 'inspect-connect-appservice'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(backendAppName) --src "$(Pipeline.Workspace)/backend/server.zip"
+          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(backendAppName) --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+          az webapp config set --resource-group $(resourceGroupName) --name $(backendAppName) --startup-file "node dist/server.js"
+
+- stage: DeploymentSummary
+  displayName: Deployment Summary
+  dependsOn: [ FrontendDeploy, BackendDeploy ]
+  jobs:
+  - job: Summary
+    pool:
+      name: 'inspect-connect-agents'
+    steps:
+    - script: |
+        echo "=============================================================================="
+        echo "🎉 DEPLOYMENT COMPLETE"
+        echo "=============================================================================="
+        echo "Frontend URL: https://$(frontendAppName).canadacentral-01.azurewebsites.net"
+        echo "Backend  URL: https://$(backendAppName).canadacentral-01.azurewebsites.net"
+        echo "Env: $(environment) | Build: $(Build.BuildNumber)"
+      displayName: Summary
