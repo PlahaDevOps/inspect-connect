@@ -189,7 +189,6 @@ stages:
     pool:
       name: 'inspect-connect-agents'
       demands: [ agent.name -equals inspect-connect-mac-agent ]
-    checkout: none
     steps:
     - task: DownloadPipelineArtifact@2
       inputs:
@@ -236,7 +235,6 @@ stages:
     pool:
       name: 'inspect-connect-agents'
       demands: [ agent.name -equals inspect-connect-mac-agent ]
-    checkout: none
     steps:
     - task: DownloadPipelineArtifact@2
       inputs:
