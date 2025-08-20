@@ -175,13 +175,28 @@ stages:
         set -euo pipefail
         echo "Pipeline.Workspace => $(Pipeline.Workspace)"
         ls -lah "$(Pipeline.Workspace)/backend" || true
-        if [ -f "$(Pipeline.Workspace)/backend/server.zip" ]; then
-          echo "✅ server.zip found, checking contents..."
-          unzip -l "$(Pipeline.Workspace)/backend/server.zip" | egrep -m 50 "package.json|^ *dist/|node_modules"
+
+        ZIP="$(Pipeline.Workspace)/backend/server.zip"
+        if [ ! -f "$ZIP" ]; then
+          echo "❌ server.zip not found under backend/"
+          ls -la "$(Pipeline.Workspace)/backend/" || true
+          exit 1
+        fi
+
+        TMP_FILE="$(mktemp)"
+        trap 'rm -f "$TMP_FILE"' EXIT
+
+        echo "✅ server.zip found, checking contents..."
+        # List zip contents to a file (no pipes -> no SIGPIPE)
+        unzip -l "$ZIP" > "$TMP_FILE" 2>/dev/null || true
+
+        if grep -qE "package\.json|(^| )dist/|node_modules" "$TMP_FILE"; then
+          echo "✅ Found expected entries (package.json, dist/, node_modules)"
+          # Show up to 50 matching lines for visibility
+          grep -E "package\.json|(^| )dist/|node_modules" "$TMP_FILE" | head -n 50 || true
           echo "✅ Artifact sanity check passed"
         else
-          echo "❌ server.zip not found under backend/"
-          ls -la "$(Pipeline.Workspace)/backend/"
+          echo "❌ Expected files not found in server.zip"
           exit 1
         fi
       displayName: 'BE: Sanity-check artifact'
