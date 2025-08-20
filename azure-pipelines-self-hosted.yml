@@ -75,13 +75,18 @@ stages:
     - script: |
         set -e
         npm config set cache "$(npmCacheDir)"
+        
+        # Clean install with fallback to regular install if lock file is out of sync
         npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        
         npm run build
 
         # Create a clean publish dir with required runtime files only
         rm -rf publish && mkdir publish
         cp package*.json publish/ 2>/dev/null || true
-        npm ci --omit=dev --prefix publish
+        
+        # Use npm install instead of npm ci for the publish directory to avoid lock file issues
+        npm install --omit=dev --prefix publish --legacy-peer-deps --prefer-offline --no-audit
         cp -r dist publish/
 
         # Create slim ZIP whose ROOT contains dist/, package.json, node_modules/
@@ -135,7 +140,7 @@ stages:
           echo "Resolved FE host: $HOST"
           echo "##vso[task.setvariable variable=FE_HOST]$HOST"
 
-    # Smoke test (uses resolved FE_HOST)
+    # Smoke test (uses resolved FE_HOST)  — EDIT: follow redirects with -L
     - bash: |
         set -euo pipefail
         URL="https://$(FE_HOST)"
@@ -149,7 +154,7 @@ stages:
           echo "Attempt $i: HTTP $code; retrying..."
           sleep 5
         done
-        html=$(curl -fsS "$URL")
+        html=$(curl -fsSL "$URL")
         echo "$html" | grep -qi "<title>" || { echo "Missing <title> in HTML"; exit 1; }
       displayName: 'FE: Smoke check'
 
@@ -170,21 +175,22 @@ stages:
         path: '$(Pipeline.Workspace)/backend'
 
     # Optional: sanity-check the artifact layout before deploy
-    - task: AzureCLI@2
+    # EDIT: avoid SIGPIPE/141 by removing head and limiting with -m
+    - bash: |
+        set -euo pipefail
+        echo "Pipeline.Workspace => $(Pipeline.Workspace)"
+        ls -lah "$(Pipeline.Workspace)/backend" || true
+        if [ -f "$(Pipeline.Workspace)/backend/server.zip" ]; then
+          echo "✅ server.zip found, checking contents..."
+          unzip -l "$(Pipeline.Workspace)/backend/server.zip" \
+            | egrep -m 50 "package.json|^ *dist/|node_modules"
+          echo "✅ Artifact sanity check passed"
+        else
+          echo "❌ server.zip not found under backend/"
+          ls -la "$(Pipeline.Workspace)/backend/"
+          exit 1
+        fi
       displayName: 'BE: Sanity-check artifact'
-      inputs:
-        azureSubscription: '$(azureSubscription)'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          echo "Pipeline.Workspace => $(Pipeline.Workspace)"
-          ls -lah "$(Pipeline.Workspace)/backend" || true
-          if [ -f "$(Pipeline.Workspace)/backend/server.zip" ]; then
-            unzip -l "$(Pipeline.Workspace)/backend/server.zip" | egrep "package.json|^ *dist/|node_modules" | head -n 50
-          else
-            echo "server.zip not found under backend/"; exit 1
-          fi
 
     - task: AzureCLI@2
       displayName: 'BE: az webapp deploy (Run-From-Package)'
