@@ -71,29 +71,28 @@ stages:
         targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
         artifact: 'frontend'
 
-    # --- Backend ---
+    # --- Backend --- (slim ZIP at root: package.json, dist/**, prod node_modules/**)
     - script: |
         set -e
         npm config set cache "$(npmCacheDir)"
         npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
         npm run build
-        npm prune --omit=dev
-      workingDirectory: server
-      displayName: 'BE: Install & Build'
 
-    - task: ArchiveFiles@2
-      displayName: 'BE: Package app'
-      inputs:
-        rootFolderOrFile: '$(Build.SourcesDirectory)/server'
-        includeRootFolder: false
-        archiveType: zip
-        archiveFile: '$(Build.ArtifactStagingDirectory)/server.zip'
-        replaceExistingArchive: true
+        # Create a clean publish dir with required runtime files only
+        rm -rf publish && mkdir publish
+        cp package*.json publish/ 2>/dev/null || true
+        npm ci --omit=dev --prefix publish
+        cp -r dist publish/
+
+        # Create slim ZIP whose ROOT contains dist/, package.json, node_modules/
+        (cd publish && zip -r ../server.zip .)
+      workingDirectory: server
+      displayName: 'BE: Build & Create slim ZIP'
 
     - task: PublishPipelineArtifact@1
       displayName: 'BE: Publish artifact'
       inputs:
-        targetPath: '$(Build.ArtifactStagingDirectory)/server.zip'
+        targetPath: '$(Build.SourcesDirectory)/server/server.zip'
         artifact: 'backend'
 
 # =========================
@@ -170,16 +169,51 @@ stages:
         artifact: 'backend'
         path: '$(Pipeline.Workspace)/backend'
 
+    # Optional: sanity-check the artifact layout before deploy
     - task: AzureCLI@2
-      displayName: 'BE: ZipDeploy'
+      displayName: 'BE: Sanity-check artifact'
       inputs:
         azureSubscription: '$(azureSubscription)'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(backendAppName) --src "$(Pipeline.Workspace)/backend/server.zip"
-          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(backendAppName) --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT=5002 NODE_ENV=production MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
-          az webapp config set --resource-group $(resourceGroupName) --name $(backendAppName) --startup-file "node dist/server.js"
+          set -euo pipefail
+          echo "Pipeline.Workspace => $(Pipeline.Workspace)"
+          ls -lah "$(Pipeline.Workspace)/backend" || true
+          if [ -f "$(Pipeline.Workspace)/backend/server.zip" ]; then
+            unzip -l "$(Pipeline.Workspace)/backend/server.zip" | egrep "package.json|^ *dist/|node_modules" | head -n 50
+          else
+            echo "server.zip not found under backend/"; exit 1
+          fi
+
+    - task: AzureCLI@2
+      displayName: 'BE: az webapp deploy (Run-From-Package)'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          # Ensure correct runtime (idempotent)
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
+
+          # App settings (Run From Package + env vars)
+          az webapp config appsettings set -g $(resourceGroupName) -n $(backendAppName) --settings \
+            WEBSITE_RUN_FROM_PACKAGE=1 WEBSITE_NODE_DEFAULT_VERSION="~20" NODE_ENV=production \
+            MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
+            TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
+            CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
+            CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+
+          # Deploy slim ZIP (mounted read-only)
+          az webapp deploy -g $(resourceGroupName) -n $(backendAppName) \
+            --src-path "$(Pipeline.Workspace)/backend/server.zip" \
+            --type zip --restart true --timeout 1800
+
+          # Startup command for built-in Linux Node
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) \
+            --startup-file "node dist/server.js"
 
     # Resolve BE host for smoke test
     - task: AzureCLI@2
