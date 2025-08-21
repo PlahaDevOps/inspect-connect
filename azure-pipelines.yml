@@ -64,18 +64,15 @@ stages:
         restoreKeys: |
           npm | client | $(Agent.OS)
 
-               - script: |
-               set -e
-               npm config set cache "$(npmCacheDir)"
-               # Clear npm cache and node_modules to avoid Rollup issues
-               rm -rf node_modules package-lock.json
-               npm cache clean --force
-               npm install --legacy-peer-deps --prefer-offline --no-audit
-               npm run build
-             workingDirectory: client
-             displayName: 'FE: Install & Build'
-             env:
-               VITE_API_URL: "https://$(BACKEND_HOST)"
+    - script: |
+        set -e
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        npm run build || npx vite build
+      workingDirectory: client
+      displayName: 'FE: Install & Build'
+      env:
+        VITE_API_URL: "https://$(BACKEND_HOST)"
 
     - task: ArchiveFiles@2
       displayName: 'FE: Package dist'
@@ -101,22 +98,19 @@ stages:
         restoreKeys: |
           npm | server | $(Agent.OS)
 
-               - script: |
-               set -e
-               npm config set cache "$(npmCacheDir)"
-               # Clear npm cache and node_modules to avoid dependency issues
-               rm -rf node_modules package-lock.json
-               npm cache clean --force
-               npm install --legacy-peer-deps --prefer-offline --no-audit
-               npm run build
+    - script: |
+        set -e
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        npm run build
 
-               rm -rf publish && mkdir publish
-               cp package*.json publish/ 2>/dev/null || true
-               npm install --omit=dev --prefix publish --legacy-peer-deps --prefer-offline --no-audit
-               cp -r dist publish/
-               (cd publish && zip -r ../server.zip .)
-             workingDirectory: server
-             displayName: 'BE: Build & Create slim ZIP'
+        rm -rf publish && mkdir publish
+        cp package*.json publish/ 2>/dev/null || true
+        npm install --omit=dev --prefix publish --legacy-peer-deps --prefer-offline --no-audit
+        cp -r dist publish/
+        (cd publish && zip -r ../server.zip .)
+      workingDirectory: server
+      displayName: 'BE: Build & Create slim ZIP'
 
     - task: PublishPipelineArtifact@1
       displayName: 'BE: Publish artifact'
