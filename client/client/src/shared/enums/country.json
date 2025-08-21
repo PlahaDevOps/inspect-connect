@@ -1,0 +1,102 @@
+[
+    {
+      "country": "United States",
+      "states": [
+        {
+          "state": "California",
+          "cities": ["Los Angeles", "San Francisco", "San Diego", "Sacramento", "San Jose"]
+        },
+        {
+          "state": "Texas",
+          "cities": ["Houston", "Dallas", "Austin", "San Antonio", "Fort Worth"]
+        },
+        {
+          "state": "New York",
+          "cities": ["New York City", "Buffalo", "Rochester", "Syracuse", "Albany"]
+        }
+      ]
+    },
+    {
+      "country": "India",
+      "states": [
+        {
+          "state": "Chandigarh",
+          "cities": ["Chandigarh", "Mohali", "Panchkula", "Ropar", "Kharar"]
+        },
+        {
+          "state": "Maharashtra",
+          "cities": ["Mumbai", "Pune", "Nagpur", "Nashik", "Aurangabad"]
+        },
+        {
+          "state": "Karnataka",
+          "cities": ["Bengaluru", "Mysuru", "Mangaluru", "Hubballi", "Belagavi"]
+        },
+        {
+          "state": "Tamil Nadu",
+          "cities": ["Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem"]
+        },
+        {
+            "state": "Punjab",
+            "cities": ["Amritsar", "Ludhiana", "Jalandhar", "Patiala", "Bathinda","Mohali"]
+          },
+          {
+            "state": "Haryana",
+            "cities": ["Gurgaon", "Faridabad", "Gurgaon", "Faridabad", "Gurgaon", "Faridabad"]
+          }
+         
+
+      ]
+    },
+    {
+      "country": "Australia",
+      "states": [
+        {
+          "state": "New South Wales",
+          "cities": ["Sydney", "Newcastle", "Wollongong", "Parramatta", "Coffs Harbour"]
+        },
+        {
+          "state": "Victoria",
+          "cities": ["Melbourne", "Geelong", "Ballarat", "Bendigo", "Shepparton"]
+        },
+        {
+          "state": "Queensland",
+          "cities": ["Brisbane", "Gold Coast", "Cairns", "Townsville", "Toowoomba"]
+        }
+      ]
+    },
+    {
+      "country": "Canada",
+      "states": [
+        {
+          "state": "Ontario",
+          "cities": ["Toronto", "Ottawa", "Mississauga", "Brampton", "Hamilton"]
+        },
+        {
+          "state": "British Columbia",
+          "cities": ["Vancouver", "Victoria", "Kelowna", "Surrey", "Burnaby"]
+        },
+        {
+          "state": "Quebec",
+          "cities": ["Montreal", "Quebec City", "Laval", "Gatineau", "Sherbrooke"]
+        }
+      ]
+    },
+    {
+      "country": "United Kingdom",
+      "states": [
+        {
+          "state": "England",
+          "cities": ["London", "Manchester", "Birmingham", "Liverpool", "Leeds"]
+        },
+        {
+          "state": "Scotland",
+          "cities": ["Edinburgh", "Glasgow", "Aberdeen", "Dundee", "Inverness"]
+        },
+        {
+          "state": "Wales",
+          "cities": ["Cardiff", "Swansea", "Newport", "Bangor", "Wrexham"]
+        }
+      ]
+    }
+  ]
+  

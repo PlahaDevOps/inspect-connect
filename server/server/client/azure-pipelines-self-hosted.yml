@@ -1,0 +1,304 @@
+trigger:
+  batch: true
+  branches:
+    include:
+      - main                # Only push/merge to main triggers CI/CD
+  paths:
+    include:
+      - client/**
+      - server/**
+      - azure-pipelines.yml
+
+pr: none                    # Disable PR validation runs for this pipeline
+
+variables:
+  nodeVersion: '20.x'
+  npmCacheDir: '$(Pipeline.Workspace)/.npm'
+
+  environment: 'production'
+  azureSubscription: 'inspect-connect-appservice'
+  resourceGroupName: 'inspect_connect-rg'
+
+  frontendAppName: 'inspect-connect-test'
+  backendAppName:  'inspect-connect-api-test'
+
+stages:
+# =========================
+# Stage 1: Build (FE & BE)
+# =========================
+- stage: Build
+  displayName: Build Frontend & Backend
+  jobs:
+  - job: BuildAll
+    displayName: Build
+    pool:
+      name: 'inspect-connect-agents'
+
+    steps:
+    - checkout: self
+
+    - task: NodeTool@0
+      inputs: { versionSpec: $(nodeVersion) }
+      displayName: Use Node.js $(nodeVersion)
+
+    # Resolve backend default hostname for VITE_API_URL
+    - task: AzureCLI@2
+      displayName: 'Resolve BE defaultHostName'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az config set core.only_show_errors=true
+          HOST=$(az webapp show -g $(resourceGroupName) -n $(backendAppName) --query defaultHostName -o tsv)
+          echo "Resolved backend host: $HOST"
+          echo "##vso[task.setvariable variable=BACKEND_HOST]$HOST"
+
+    # --- Frontend ---
+    - task: Cache@2
+      displayName: 'FE: Restore npm cache'
+      inputs:
+        key: 'npm | client | $(Agent.OS) | $(Build.SourcesDirectory)/client/package-lock.json'
+        path: '$(Pipeline.Workspace)/.npm'
+        restoreKeys: |
+          npm | client | $(Agent.OS)
+
+    - script: |
+        set -e
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        npm run build || npx vite build
+      workingDirectory: client
+      displayName: 'FE: Install & Build'
+      env:
+        VITE_API_URL: "https://$(BACKEND_HOST)"
+
+    - task: ArchiveFiles@2
+      displayName: 'FE: Package dist'
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/client/dist'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+        replaceExistingArchive: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'FE: Publish artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+        artifact: 'frontend'
+
+    # --- Backend ---
+    - task: Cache@2
+      displayName: 'BE: Restore npm cache'
+      inputs:
+        key: 'npm | server | $(Agent.OS) | $(Build.SourcesDirectory)/server/package-lock.json'
+        path: '$(Pipeline.Workspace)/.npm'
+        restoreKeys: |
+          npm | server | $(Agent.OS)
+
+    - script: |
+        set -e
+        npm config set cache "$(npmCacheDir)"
+        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        npm run build
+
+        rm -rf publish && mkdir publish
+        cp package*.json publish/ 2>/dev/null || true
+        npm install --omit=dev --prefix publish --legacy-peer-deps --prefer-offline --no-audit
+        cp -r dist publish/
+        (cd publish && zip -r ../server.zip .)
+      workingDirectory: server
+      displayName: 'BE: Build & Create slim ZIP'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'BE: Publish artifact'
+      inputs:
+        targetPath: '$(Build.SourcesDirectory)/server/server.zip'
+        artifact: 'backend'
+
+# =========================
+# Stage 2: Frontend Deploy
+# =========================
+- stage: FrontendDeploy
+  displayName: Deploy Frontend
+  dependsOn: Build
+  jobs:
+  - job: DeployFrontend
+    pool:
+      name: 'inspect-connect-agents'
+    steps:
+    - checkout: none   # use artifact only
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'frontend'
+        path: '$(Pipeline.Workspace)/frontend'
+
+    - task: AzureCLI@2
+      displayName: 'FE: ZipDeploy (az webapp deploy)'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az config set core.only_show_errors=true
+          # Deploy ZIP with modern command (consistent with backend)
+          az webapp deploy -g $(resourceGroupName) -n $(frontendAppName) \
+            --src-path "$(Pipeline.Workspace)/frontend/frontend.zip" \
+            --type zip --restart true --timeout 1800
+          # App settings and startup
+          az webapp config appsettings set -g $(resourceGroupName) -n $(frontendAppName) \
+            --settings WEBSITES_PORT=8080
+          az webapp config set -g $(resourceGroupName) -n $(frontendAppName) \
+            --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
+
+    - task: AzureCLI@2
+      displayName: 'FE: Resolve defaultHostName'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az config set core.only_show_errors=true
+          HOST=$(az webapp show -g $(resourceGroupName) -n $(frontendAppName) --query defaultHostName -o tsv)
+          echo "Resolved FE host: $HOST"
+          echo "##vso[task.setvariable variable=FE_HOST]$HOST"
+
+    - bash: |
+        set -euo pipefail
+        URL="https://$(FE_HOST)"
+        echo "Probing $URL ..."
+        for i in {1..20}; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
+            echo "Frontend reachable (HTTP $code)"
+            break
+          fi
+          echo "Attempt $i: HTTP $code; retrying..."
+          sleep 5
+        done
+        html=$(curl -fsSL "$URL")   # follow redirects
+        echo "$html" | grep -qi "<title>" || { echo "Missing <title> in HTML"; exit 1; }
+      displayName: 'FE: Smoke check'
+
+# =========================
+# Stage 3: Backend Deploy
+# =========================
+- stage: BackendDeploy
+  displayName: Deploy Backend
+  dependsOn: Build
+  jobs:
+  - job: DeployBackend
+    pool:
+      name: 'inspect-connect-agents'
+    steps:
+    - checkout: none   # use artifact only
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'backend'
+        path: '$(Pipeline.Workspace)/backend'
+
+    - bash: |
+        set -euo pipefail
+        echo "Pipeline.Workspace => $(Pipeline.Workspace)"
+        ls -lah "$(Pipeline.Workspace)/backend" || true
+
+        ZIP="$(Pipeline.Workspace)/backend/server.zip"
+        if [ ! -f "$ZIP" ]; then
+          echo "❌ server.zip not found under backend/"
+          ls -la "$(Pipeline.Workspace)/backend/" || true
+          exit 1
+        fi
+
+        TMP_FILE="$(mktemp)"
+        trap 'rm -f "$TMP_FILE"' EXIT
+
+        echo "✅ server.zip found, checking contents..."
+        unzip -l "$ZIP" > "$TMP_FILE" 2>/dev/null || true
+
+        if grep -qE "package\.json|(^| )dist/|node_modules" "$TMP_FILE"; then
+          echo "✅ Found expected entries (package.json, dist/, node_modules)"
+          grep -E "package\.json|(^| )dist/|node_modules" "$TMP_FILE" | head -n 50 || true
+          echo "✅ Artifact sanity check passed"
+        else
+          echo "❌ Expected files not found in server.zip"
+          exit 1
+        fi
+      displayName: 'BE: Sanity-check artifact'
+
+    - task: AzureCLI@2
+      displayName: 'BE: az webapp deploy (Run-From-Package)'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az config set core.only_show_errors=true
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
+          az webapp config appsettings set -g $(resourceGroupName) -n $(backendAppName) --settings \
+            WEBSITE_RUN_FROM_PACKAGE=1 WEBSITE_NODE_DEFAULT_VERSION="~20" NODE_ENV=production \
+            MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
+            TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
+            CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
+            CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+          az webapp deploy -g $(resourceGroupName) -n $(backendAppName) \
+            --src-path "$(Pipeline.Workspace)/backend/server.zip" \
+            --type zip --restart true --timeout 1800
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) \
+            --startup-file "node dist/server.js"
+
+    - task: AzureCLI@2
+      displayName: 'BE: Resolve defaultHostName'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az config set core.only_show_errors=true
+          HOST=$(az webapp show -g $(resourceGroupName) -n $(backendAppName) --query defaultHostName -o tsv)
+          echo "Resolved BE host: $HOST"
+          echo "##vso[task.setvariable variable=BE_HOST]$HOST"
+
+    - bash: |
+        set -euo pipefail
+        PATH_OR_ROOT="${HEALTH_PATH:-/}"        # Optional pipeline variable HEALTH_PATH (e.g., /api/health)
+        URL="https://$(BE_HOST)${PATH_OR_ROOT}"
+        echo "Probing $URL ..."
+        for i in {1..20}; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          if [ "$code" = "200" ]; then
+            echo "Backend healthy (HTTP 200)"
+            exit 0
+          fi
+          echo "Attempt $i: HTTP $code; retrying..."
+          sleep 5
+        done
+        echo "Backend did not become healthy"; exit 1
+      displayName: 'BE: Smoke check'
+
+# =========================
+# Stage 4: Summary
+# =========================
+- stage: DeploymentSummary
+  displayName: Deployment Summary
+  dependsOn: [ FrontendDeploy, BackendDeploy ]
+  jobs:
+  - job: Summary
+    pool:
+      name: 'inspect-connect-agents'
+    steps:
+    - script: |
+        echo "=============================================================================="
+        echo "🎉 DEPLOYMENT COMPLETE"
+        echo "=============================================================================="
+        echo "Frontend URL (resolved at runtime)."
+        echo "Backend  URL (resolved at runtime)."
+        echo "Env: $(environment) | Build: $(Build.BuildNumber)"
+      displayName: Summary
