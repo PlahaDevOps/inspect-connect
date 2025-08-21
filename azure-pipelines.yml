@@ -330,7 +330,7 @@ stages:
           # Configure basic web app settings
           echo "Configuring web app settings..."
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
-          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "npm start"
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "npm run prod"
 
           ZIP="$(Pipeline.Workspace)/backend/server.zip"
           for i in 1 2 3; do
