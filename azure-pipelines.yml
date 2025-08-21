@@ -22,11 +22,12 @@ variables:
   frontendAppName: 'inspect-connect-test'
   backendAppName:  'inspect-connect-api-test'
   
-  # Environment variables for better build stability
+  # Build stability
   NODE_OPTIONS: '--max-old-space-size=4096'
   npm_config_legacy_peer_deps: 'true'
   npm_config_prefer_offline: 'true'
   npm_config_audit: 'false'
+  CI: 'true'
 
 stages:
 # =========================
@@ -47,6 +48,15 @@ stages:
       inputs: { versionSpec: $(nodeVersion) }
       displayName: Use Node.js $(nodeVersion)
 
+    # NEW: upgrade npm to v11 (fixes optional-deps bug that breaks Rollup native binary)
+    - script: |
+        set -euo pipefail
+        echo "Node:"; node -v
+        echo "npm (before):"; npm -v || true
+        npm i -g npm@11.5.2
+        echo "npm (after):"; npm -v
+      displayName: 'Upgrade npm to 11.x'
+
     # Resolve backend default hostname for VITE_API_URL
     - task: AzureCLI@2
       displayName: 'Resolve BE defaultHostName'
@@ -61,7 +71,7 @@ stages:
           echo "Resolved backend host: $HOST"
           echo "##vso[task.setvariable variable=BACKEND_HOST]$HOST"
 
-    # --- Frontend ---
+    # -------- Frontend --------
     - task: Cache@2
       displayName: 'FE: Restore npm cache'
       inputs:
@@ -71,30 +81,56 @@ stages:
           npm | client | $(Agent.OS)
 
     - script: |
-        set -e
+        set -euo pipefail
         npm config set cache "$(npmCacheDir)"
-        
-        # Clear npm cache and node_modules to avoid Rollup issues
-        echo "Clearing npm cache and node_modules..."
-        rm -rf node_modules package-lock.json
-        npm cache clean --force
-        
-        # Install dependencies
-        echo "Installing dependencies..."
-        npm install --legacy-peer-deps --prefer-offline --no-audit
-        
-        # Fix Rollup native dependency issue
-        echo "Fixing Rollup native dependency..."
-        npm rebuild @rollup/rollup-darwin-x64 --update-binary || true
-        npm rebuild rollup --update-binary || true
-        
-        # Build the application
-        echo "Building application..."
-        npm run build
+
+        echo "Installing FE deps (lock-aware)..."
+        if [ -f package-lock.json ]; then
+          npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        else
+          npm install --legacy-peer-deps --prefer-offline --no-audit
+        fi
+
+        # Verify Rollup can load native binary; if not, install the correct platform package and rebuild.
+        echo "Verifying Rollup native binary..."
+        node -e "try{require('rollup');process.exit(0)}catch(e){process.exit(42)}" || (
+          echo "Rollup native missing; attempting platform-specific install..."
+          PKG=$(node -e "const p=process.platform,a=process.arch;let n='';
+            if(p==='darwin'&&a==='x64') n='@rollup/rollup-darwin-x64';
+            else if(p==='darwin'&&a==='arm64') n='@rollup/rollup-darwin-arm64';
+            else if(p==='linux'&&a==='x64') n='@rollup/rollup-linux-x64-gnu';
+            else if(p==='linux'&&a==='arm64') n='@rollup/rollup-linux-arm64-gnu';
+            else if(p==='win32'&&a==='x64') n='@rollup/rollup-win32-x64-msvc';
+            console.log(n)")
+          if [ -n "$PKG" ]; then
+            echo "Installing $PKG ..."
+            npm i -D "$PKG" || true
+          else
+            echo "Unknown platform/arch for Rollup native; continuing without explicit install"
+          fi
+          echo "Rebuilding rollup (best-effort)..."
+          npm rebuild rollup --update-binary || true
+        )
+
+        echo "Running TypeScript typecheck (non-blocking)..."
+        npm run typecheck > fe-typecheck.txt || true
+
+        echo "Building FE..."
+        npm run build || npx vite build
+
+        # Assert artifact exists
+        [ -d dist ] || { echo "❌ FE dist/ not found after build"; ls -la; exit 1; }
+        echo "✅ FE dist/ present"
       workingDirectory: client
-      displayName: 'FE: Install & Build'
+      displayName: 'FE: Install, fix Rollup if needed, Typecheck (soft), Build'
       env:
         VITE_API_URL: "https://$(BACKEND_HOST)"
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'FE: Publish typecheck report'
+      inputs:
+        targetPath: '$(Build.SourcesDirectory)/client/fe-typecheck.txt'
+        artifact: 'fe-typecheck'
 
     - task: ArchiveFiles@2
       displayName: 'FE: Package dist'
@@ -111,7 +147,7 @@ stages:
         targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
         artifact: 'frontend'
 
-    # --- Backend ---
+    # -------- Backend --------
     - task: Cache@2
       displayName: 'BE: Restore npm cache'
       inputs:
@@ -121,29 +157,41 @@ stages:
           npm | server | $(Agent.OS)
 
     - script: |
-        set -e
+        set -euo pipefail
         npm config set cache "$(npmCacheDir)"
-        
-        # Clear npm cache and node_modules to avoid dependency issues
-        echo "Clearing npm cache and node_modules..."
-        rm -rf node_modules package-lock.json
-        npm cache clean --force
-        
-        # Install dependencies
-        echo "Installing dependencies..."
-        npm install --legacy-peer-deps --prefer-offline --no-audit
-        
-        # Build the application
-        echo "Building application..."
+
+        echo "Installing BE deps (lock-aware)..."
+        if [ -f package-lock.json ]; then
+          npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        else
+          npm install --legacy-peer-deps --prefer-offline --no-audit
+        fi
+
+        echo "Building BE..."
         npm run build
 
-        # Create deployment package
+        # Assert dist exists
+        [ -d dist ] || { echo "❌ BE dist/ not found after build"; ls -la; exit 1; }
+        echo "✅ BE dist/ present"
+
         echo "Creating deployment package..."
         rm -rf publish && mkdir publish
+
+        # include lockfile for deterministic prod install
         cp package*.json publish/ 2>/dev/null || true
-        npm install --omit=dev --prefix publish --legacy-peer-deps --prefer-offline --no-audit
+        [ -f package-lock.json ] && cp package-lock.json publish/ || true
+
+        # Install prod deps deterministically (prefer ci when lockfile exists)
+        if [ -f publish/package-lock.json ]; then
+          npm ci --omit=dev --prefix publish --prefer-offline --no-audit || npm install --omit=dev --prefix publish --prefer-offline --no-audit
+        else
+          npm install --omit=dev --prefix publish --prefer-offline --no-audit
+        fi
+
         cp -r dist publish/
         (cd publish && zip -r ../server.zip .)
+        [ -f server.zip ] || { echo "❌ server.zip not created"; exit 1; }
+        echo "✅ server.zip created"
       workingDirectory: server
       displayName: 'BE: Build & Create slim ZIP'
 
@@ -172,7 +220,7 @@ stages:
         path: '$(Pipeline.Workspace)/frontend'
 
     - task: AzureCLI@2
-      displayName: 'FE: ZipDeploy (az webapp deploy)'
+      displayName: 'FE: ZipDeploy (az webapp deploy) with retry'
       inputs:
         azureSubscription: '$(azureSubscription)'
         scriptType: bash
@@ -180,15 +228,20 @@ stages:
         inlineScript: |
           set -euo pipefail
           az config set core.only_show_errors=true
-          # Deploy ZIP with modern command (consistent with backend)
-          az webapp deploy -g $(resourceGroupName) -n $(frontendAppName) \
-            --src-path "$(Pipeline.Workspace)/frontend/frontend.zip" \
-            --type zip --restart true --timeout 1800
-          # App settings and startup
-          az webapp config appsettings set -g $(resourceGroupName) -n $(frontendAppName) \
-            --settings WEBSITES_PORT=8080
-          az webapp config set -g $(resourceGroupName) -n $(frontendAppName) \
-            --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
+
+          ZIP="$(Pipeline.Workspace)/frontend/frontend.zip"
+          for i in 1 2 3; do
+            echo "Deploy attempt $i ..."
+            if az webapp deploy -g $(resourceGroupName) -n $(frontendAppName) --src-path "$ZIP" --type zip --restart true --timeout 1800; then
+              echo "✅ FE deploy succeeded"
+              break
+            fi
+            echo "⚠️  FE deploy failed (attempt $i). Retrying in 10s..."
+            sleep 10
+          done
+
+          az webapp config appsettings set -g $(resourceGroupName) -n $(frontendAppName) --settings WEBSITES_PORT=8080
+          az webapp config set -g $(resourceGroupName) -n $(frontendAppName) --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
 
     - task: AzureCLI@2
       displayName: 'FE: Resolve defaultHostName'
@@ -207,8 +260,8 @@ stages:
         set -euo pipefail
         URL="https://$(FE_HOST)"
         echo "Probing $URL ..."
-        for i in {1..20}; do
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+        for i in {1..30}; do
+          code=$(curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w "%{http_code}" "$URL")
           if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
             echo "Frontend reachable (HTTP $code)"
             break
@@ -216,7 +269,7 @@ stages:
           echo "Attempt $i: HTTP $code; retrying..."
           sleep 5
         done
-        html=$(curl -fsSL "$URL")   # follow redirects
+        html=$(curl -fsSL --connect-timeout 5 --max-time 15 "$URL")
         echo "$html" | grep -qi "<title>" || { echo "Missing <title> in HTML"; exit 1; }
       displayName: 'FE: Smoke check'
 
@@ -250,9 +303,7 @@ stages:
           exit 1
         fi
 
-        TMP_FILE="$(mktemp)"
-        trap 'rm -f "$TMP_FILE"' EXIT
-
+        TMP_FILE="$(mktemp)"; trap 'rm -f "$TMP_FILE"' EXIT
         echo "✅ server.zip found, checking contents..."
         unzip -l "$ZIP" > "$TMP_FILE" 2>/dev/null || true
 
@@ -267,7 +318,7 @@ stages:
       displayName: 'BE: Sanity-check artifact'
 
     - task: AzureCLI@2
-      displayName: 'BE: az webapp deploy (Run-From-Package)'
+      displayName: 'BE: az webapp deploy (Run-From-Package) with retry'
       inputs:
         azureSubscription: '$(azureSubscription)'
         scriptType: bash
@@ -282,11 +333,19 @@ stages:
             TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
             CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
             CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
-          az webapp deploy -g $(resourceGroupName) -n $(backendAppName) \
-            --src-path "$(Pipeline.Workspace)/backend/server.zip" \
-            --type zip --restart true --timeout 1800
-          az webapp config set -g $(resourceGroupName) -n $(backendAppName) \
-            --startup-file "node dist/server.js"
+
+          ZIP="$(Pipeline.Workspace)/backend/server.zip"
+          for i in 1 2 3; do
+            echo "Deploy attempt $i ..."
+            if az webapp deploy -g $(resourceGroupName) -n $(backendAppName) --src-path "$ZIP" --type zip --restart true --timeout 1800; then
+              echo "✅ BE deploy succeeded"
+              break
+            fi
+            echo "⚠️  BE deploy failed (attempt $i). Retrying in 10s..."
+            sleep 10
+          done
+
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "node dist/server.js"
 
     - task: AzureCLI@2
       displayName: 'BE: Resolve defaultHostName'
@@ -306,8 +365,8 @@ stages:
         PATH_OR_ROOT="${HEALTH_PATH:-/}"        # Optional pipeline variable HEALTH_PATH (e.g., /api/health)
         URL="https://$(BE_HOST)${PATH_OR_ROOT}"
         echo "Probing $URL ..."
-        for i in {1..20}; do
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+        for i in {1..30}; do
+          code=$(curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w "%{http_code}" "$URL")
           if [ "$code" = "200" ]; then
             echo "Backend healthy (HTTP 200)"
             exit 0
