@@ -1,9 +1,15 @@
 trigger:
+  batch: true
   branches:
     include:
-      - main        # Only push/merge to main triggers CI/CD
+      - main                # Only push/merge to main triggers CI/CD
+  paths:
+    include:
+      - client/**
+      - server/**
+      - azure-pipelines.yml
 
-pr: none            # Disable PR validation runs for this pipeline
+pr: none                    # Disable PR validation runs for this pipeline
 
 variables:
   nodeVersion: '20.x'
@@ -44,11 +50,20 @@ stages:
         scriptLocation: inlineScript
         inlineScript: |
           set -euo pipefail
+          az config set core.only_show_errors=true
           HOST=$(az webapp show -g $(resourceGroupName) -n $(backendAppName) --query defaultHostName -o tsv)
           echo "Resolved backend host: $HOST"
           echo "##vso[task.setvariable variable=BACKEND_HOST]$HOST"
 
     # --- Frontend ---
+    - task: Cache@2
+      displayName: 'FE: Restore npm cache'
+      inputs:
+        key: 'npm | client | $(Agent.OS) | $(Build.SourcesDirectory)/client/package-lock.json'
+        path: '$(Pipeline.Workspace)/.npm'
+        restoreKeys: |
+          npm | client | $(Agent.OS)
+
     - script: |
         set -e
         npm config set cache "$(npmCacheDir)"
@@ -75,6 +90,14 @@ stages:
         artifact: 'frontend'
 
     # --- Backend ---
+    - task: Cache@2
+      displayName: 'BE: Restore npm cache'
+      inputs:
+        key: 'npm | server | $(Agent.OS) | $(Build.SourcesDirectory)/server/package-lock.json'
+        path: '$(Pipeline.Workspace)/.npm'
+        restoreKeys: |
+          npm | server | $(Agent.OS)
+
     - script: |
         set -e
         npm config set cache "$(npmCacheDir)"
@@ -114,15 +137,23 @@ stages:
         path: '$(Pipeline.Workspace)/frontend'
 
     - task: AzureCLI@2
-      displayName: 'FE: ZipDeploy'
+      displayName: 'FE: ZipDeploy (az webapp deploy)'
       inputs:
         azureSubscription: '$(azureSubscription)'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          az webapp deployment source config-zip --resource-group $(resourceGroupName) --name $(frontendAppName) --src "$(Pipeline.Workspace)/frontend/frontend.zip"
-          az webapp config appsettings set --resource-group $(resourceGroupName) --name $(frontendAppName) --settings WEBSITES_PORT=8080
-          az webapp config set --resource-group $(resourceGroupName) --name $(frontendAppName) --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
+          set -euo pipefail
+          az config set core.only_show_errors=true
+          # Deploy ZIP with modern command (consistent with backend)
+          az webapp deploy -g $(resourceGroupName) -n $(frontendAppName) \
+            --src-path "$(Pipeline.Workspace)/frontend/frontend.zip" \
+            --type zip --restart true --timeout 1800
+          # App settings and startup
+          az webapp config appsettings set -g $(resourceGroupName) -n $(frontendAppName) \
+            --settings WEBSITES_PORT=8080
+          az webapp config set -g $(resourceGroupName) -n $(frontendAppName) \
+            --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
 
     - task: AzureCLI@2
       displayName: 'FE: Resolve defaultHostName'
@@ -132,6 +163,7 @@ stages:
         scriptLocation: inlineScript
         inlineScript: |
           set -euo pipefail
+          az config set core.only_show_errors=true
           HOST=$(az webapp show -g $(resourceGroupName) -n $(frontendAppName) --query defaultHostName -o tsv)
           echo "Resolved FE host: $HOST"
           echo "##vso[task.setvariable variable=FE_HOST]$HOST"
@@ -207,6 +239,7 @@ stages:
         scriptLocation: inlineScript
         inlineScript: |
           set -euo pipefail
+          az config set core.only_show_errors=true
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
           az webapp config appsettings set -g $(resourceGroupName) -n $(backendAppName) --settings \
             WEBSITE_RUN_FROM_PACKAGE=1 WEBSITE_NODE_DEFAULT_VERSION="~20" NODE_ENV=production \
@@ -228,13 +261,15 @@ stages:
         scriptLocation: inlineScript
         inlineScript: |
           set -euo pipefail
+          az config set core.only_show_errors=true
           HOST=$(az webapp show -g $(resourceGroupName) -n $(backendAppName) --query defaultHostName -o tsv)
           echo "Resolved BE host: $HOST"
           echo "##vso[task.setvariable variable=BE_HOST]$HOST"
 
     - bash: |
         set -euo pipefail
-        URL="https://$(BE_HOST)/"
+        PATH_OR_ROOT="${HEALTH_PATH:-/}"        # Optional pipeline variable HEALTH_PATH (e.g., /api/health)
+        URL="https://$(BE_HOST)${PATH_OR_ROOT}"
         echo "Probing $URL ..."
         for i in {1..20}; do
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
