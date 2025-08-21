@@ -21,6 +21,12 @@ variables:
 
   frontendAppName: 'inspect-connect-test'
   backendAppName:  'inspect-connect-api-test'
+  
+  # Environment variables for better build stability
+  NODE_OPTIONS: '--max-old-space-size=4096'
+  npm_config_legacy_peer_deps: 'true'
+  npm_config_prefer_offline: 'true'
+  npm_config_audit: 'false'
 
 stages:
 # =========================
@@ -67,8 +73,24 @@ stages:
     - script: |
         set -e
         npm config set cache "$(npmCacheDir)"
-        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
-        npm run build || npx vite build
+        
+        # Clear npm cache and node_modules to avoid Rollup issues
+        echo "Clearing npm cache and node_modules..."
+        rm -rf node_modules package-lock.json
+        npm cache clean --force
+        
+        # Install dependencies
+        echo "Installing dependencies..."
+        npm install --legacy-peer-deps --prefer-offline --no-audit
+        
+        # Fix Rollup native dependency issue
+        echo "Fixing Rollup native dependency..."
+        npm rebuild @rollup/rollup-darwin-x64 --update-binary || true
+        npm rebuild rollup --update-binary || true
+        
+        # Build the application
+        echo "Building application..."
+        npm run build
       workingDirectory: client
       displayName: 'FE: Install & Build'
       env:
@@ -101,9 +123,22 @@ stages:
     - script: |
         set -e
         npm config set cache "$(npmCacheDir)"
-        npm ci --legacy-peer-deps --prefer-offline --no-audit || npm install --legacy-peer-deps --prefer-offline --no-audit
+        
+        # Clear npm cache and node_modules to avoid dependency issues
+        echo "Clearing npm cache and node_modules..."
+        rm -rf node_modules package-lock.json
+        npm cache clean --force
+        
+        # Install dependencies
+        echo "Installing dependencies..."
+        npm install --legacy-peer-deps --prefer-offline --no-audit
+        
+        # Build the application
+        echo "Building application..."
         npm run build
 
+        # Create deployment package
+        echo "Creating deployment package..."
         rm -rf publish && mkdir publish
         cp package*.json publish/ 2>/dev/null || true
         npm install --omit=dev --prefix publish --legacy-peer-deps --prefer-offline --no-audit
