@@ -326,13 +326,11 @@ stages:
         inlineScript: |
           set -euo pipefail
           az config set core.only_show_errors=true
+          
+          # Configure basic web app settings
+          echo "Configuring web app settings..."
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
-          az webapp config appsettings set -g $(resourceGroupName) -n $(backendAppName) --settings \
-            WEBSITE_RUN_FROM_PACKAGE=1 WEBSITE_NODE_DEFAULT_VERSION="~20" NODE_ENV=production \
-            MONGODB_URI="$(MONGODB_URI)" JWT_SECRET="$(JWT_SECRET)" SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
-            TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
-            CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
-            CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "npm start"
 
           ZIP="$(Pipeline.Workspace)/backend/server.zip"
           for i in 1 2 3; do
@@ -344,8 +342,26 @@ stages:
             echo "⚠️  BE deploy failed (attempt $i). Retrying in 10s..."
             sleep 10
           done
-
-          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "node dist/server.js"
+          
+          # Set environment variables AFTER deployment
+          echo "Setting environment variables..."
+          az webapp config appsettings set -g $(resourceGroupName) -n $(backendAppName) --settings \
+            WEBSITE_RUN_FROM_PACKAGE=1 \
+            WEBSITE_NODE_DEFAULT_VERSION="~20" \
+            NODE_ENV=production \
+            WEBSITES_PORT=5002 \
+            MONGODB_URI="$(MONGODB_URI)" \
+            JWT_SECRET="$(JWT_SECRET)" \
+            SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
+            TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" \
+            TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
+            CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" \
+            CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
+            CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+          
+          # Verify environment variables are set
+          echo "Verifying environment variables..."
+          az webapp config appsettings list -g $(resourceGroupName) -n $(backendAppName) --query "[?name=='NODE_ENV' || name=='WEBSITES_PORT' || name=='MONGODB_URI']" -o table
 
     - task: AzureCLI@2
       displayName: 'BE: Resolve defaultHostName'
