@@ -1,19 +1,33 @@
 import mongoose, { Schema } from 'mongoose';
-import { ISubscription } from '../interfaces/subscriptionInterface';
+import { ISubscription } from '../interfaces/stripeInterface';
 
 const SubscriptionSchema = new Schema<ISubscription>(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    subscriptionPlanId: { type: mongoose.Schema.Types.ObjectId, ref: "SubscriptionPlan", required: true },
-    paymentMethod: { type: String, required: true },
-    paymentStatus: { type: String, required: true },
-    paymentDate: { type: Date, required: true },
-    paymentAmount: { type: Number, required: true },
-    paymentCurrency: { type: String, required: true },
-    status: { type: Number, enum: [0,1], default: 0, description: "0 = inactive, 1 = active" },
+    stripeSubscriptionId: { type: String, required: true },
+    customerId: { type: String, required: true },
+    productId: { type: String, required: true }, // Plan ID
+    priceId: { type: String, required: true },
+    stripeSubscriptionStatus: { type: String, required: true },
+    collectionMethod: { type: String },
+    startDate: { type: Number },
+    currentPeriodStart: { type: Number },
+    currentPeriodEnd: { type: Number },
+    trialStart: { type: Number },
+    trialEnd: { type: Number },
+    amount: { type: Number, required: true },
+    currency: { type: String, required: true },
+    interval: { type: String, required: true }, // month, year
+    intervalCount: { type: Number, required: true },
+    latestInvoiceUrl: { type: String },
+    latestInvoicePdf: { type: String },
+    latestInvoiceId: { type: String },
+    livemode: { type: Boolean, default: false },
+    metadata: { type: Map, of: String },
+    subscriptionJson: { type: String, required: true },
   },
   {
-    timestamps: true,
+    timestamps: true
   }
 );
 

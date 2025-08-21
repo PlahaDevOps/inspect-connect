@@ -1,5 +1,7 @@
-import { createPostThunk } from './indexThunkApis';
+import { createGetThunk, createPostThunk } from './indexThunkApis';
 import { API_ENDPOINTS } from '../apiEndpoints';
+import type { User, UserRole } from '../../shared/interfaces/userInterface';
+import type { CreateSubscriptionPayload, CreateSubscriptionResponse, SubscriptionPlan, CreateCheckoutSessionPayload } from '../../shared/interfaces/subscriptionInterface';
 
 type Credentials = { email: string; password: string };
 type ForgotPasswordPayload = { email: string };
@@ -39,12 +41,21 @@ interface RegisterPayload {
 
 
 type AuthResponse = { 
-  user: unknown; 
-  token: string;
+  user?: User; 
+  token?: string;
   authToken?: string;
   success?: boolean;
   code?: number;
-  message?: string;
+  message?: string; 
+  _id?: string;
+  email?: string;
+  name?: string;
+  role?: UserRole;
+  createdAt?: string;
+  updatedAt?: string; 
+  subscriptionStatus?: string;
+  stripeCustomerId?: string;
+  currentSubscriptionId?: string;
 };
 
 export const loginUser = createPostThunk<AuthResponse, Credentials>(
@@ -77,4 +88,18 @@ export const verifyOtp = createPostThunk<AuthResponse, VerifyOtpPayload>(
 export const forgotPassword = createPostThunk<AuthResponse, ForgotPasswordPayload>(
   'auth/forgotPassword',
   () => API_ENDPOINTS.AUTH.FORGOT_PASSWORD
+);
+export const getSubscriptionPlans = createGetThunk<SubscriptionPlan[]>(
+  'auth/getSubscriptionPlans',
+  () => API_ENDPOINTS.SUBSCRIPTIONS.LIST_PLANS
+);
+
+  export const createSubscription = createPostThunk<CreateSubscriptionResponse, CreateSubscriptionPayload>(
+  'auth/createSubscription',
+  () => API_ENDPOINTS.SUBSCRIPTIONS.CREATE_SUBSCRIPTION
+);
+
+export const createCheckoutSession = createPostThunk<CreateSubscriptionResponse, CreateCheckoutSessionPayload>(
+  'auth/createCheckoutSession',
+  () => API_ENDPOINTS.SUBSCRIPTIONS.CREATE_CHECKOUT_SESSION
 );

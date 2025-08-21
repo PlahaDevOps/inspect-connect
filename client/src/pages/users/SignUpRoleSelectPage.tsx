@@ -1,4 +1,4 @@
-import SignUpRoleSelect from '../../shared/components/SignUpRoleSelect';
+import SignUpRoleSelect from '../../shared/components/users/SignUpRoleSelect';
 
 function App() {
   return <SignUpRoleSelect />;

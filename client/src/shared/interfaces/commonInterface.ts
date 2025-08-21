@@ -1,5 +1,6 @@
 import React from 'react';
 import type { User, UserRole } from '../interfaces/userInterface';
+import type { SubscriptionPlan } from './subscriptionInterface';
 
 export interface RouteConfig {
   path: string;
@@ -55,4 +56,8 @@ export interface AuthState {
   loading: boolean;
   error: string | null;
   forgotPasswordResponse: null;
+  role: UserRole | null;
+  subscriptionPlans: SubscriptionPlan[] | null;
+  subscriptionStatus: string | null;
+  currentSubscriptionId: string | null;
 }

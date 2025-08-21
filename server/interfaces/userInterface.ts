@@ -23,23 +23,24 @@ export interface IUser extends Document {
     phoneOtpExpiryTime?: Date;
     phoneOtp?: string;
     // fields for inspector
-    stripeCustomer?: string;
     isDeleted?: boolean;
     mailingAddress?: string;
     certificateTypeId?: string;
     certificateAgencyIds?: string[];
     certificateDocuments?: string[];
     certificateExpiryDate?: Date;
-    subscriptionId?: string;
     uploadedIdOrLicenseDocument?: string;
     referenceDocuments?: string[];
     workHistoryDescription?: string;
     phoneOtpVerified?: boolean;
     emailOtpVerified?: boolean;
     verifyByAdmin?: boolean;
-    subscriptionStatus?: number;
+    stripeCustomerId?: string;
+    subscriptionStatus?: string;
+    currentSubscriptionId?: string;
     agreedToTerms?: boolean;
     isTruthfully?: boolean;
     loginTime?: Date;
+    currentSubscriptionTrialDays?: number;
   }
   

@@ -5,139 +5,731 @@
     "description": "Description of my API",
     "version": "1.0.0"
   },
-  "host": "localhost:5002/api",
-  "basePath": "/",
+  "host": "localhost:5002",
+  "basePath": "/api/v1",
+  "tags": [
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Stripe Subscription"
+    },
+    {
+      "name": "Uploads"
+    },
+    {
+      "name": "Activity Logs"
+    },
+    {
+      "name": "Admin"
+    },
+    {
+      "name": "Admin Stripe"
+    }
+  ],
   "schemes": [
     "http"
   ],
+  "securityDefinitions": {
+    "authToken": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header",
+      "description": "Bearer token for authorization"
+    }
+  },
   "paths": {
-    "/": {
-      "get": {
-        "description": "",
+    "/signUp": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign Up",
+        "description": "Sign Up",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "signUp",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/signup"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
           }
         }
       }
     },
-    "/login": {
-      "get": {
+    "/signIn": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
         "description": "",
         "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          },
           "default": {
             "description": ""
           }
         }
-      },
+      }
+    },
+    "/forgotPassword": {
       "post": {
-        "description": "",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Forgot Password",
+        "description": "Forgot Password",
+        "produces": [
+          "application/json"
+        ],
         "parameters": [
           {
-            "name": "body",
+            "name": "forgotPassword",
             "in": "body",
             "schema": {
               "type": "object",
               "properties": {
                 "email": {
-                  "example": "any"
+                  "type": "string",
+                  "example": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        }
+      }
+    },
+    "/resetPassword": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Forgot Password",
+        "description": "Reset Password",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "resetPassword",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "encryptedEmail": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "resetPasswordToken": {
+                  "type": "string",
+                  "example": "string"
                 },
                 "password": {
-                  "example": "any"
+                  "type": "string",
+                  "example": "string"
                 }
               }
             }
           }
         ],
         "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
-    "/signup": {
-      "post": {
-        "description": "",
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
-    "/forgot-password": {
-      "post": {
-        "description": "",
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
+          "200": {
+            "description": "Success",
             "schema": {
-              "type": "object",
-              "properties": {
-                "error": {
-                  "example": "any"
-                }
-              }
+              "$ref": "#/definitions/Response200"
             }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
-    "/reset-password-link": {
-      "get": {
-        "description": "",
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "type": "string"
           },
-          {
-            "name": "email",
-            "in": "query",
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
           }
         }
       }
     },
-    "/reset-password": {
+    "/uploads": {
       "post": {
-        "description": "",
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "File Upload",
+        "description": "File Upload",
+        "consumes": [
+          "multipart/form-data"
+        ],
+        "produces": [
+          "application/json"
+        ],
         "parameters": [
           {
-            "name": "body",
+            "name": "file",
+            "in": "formData",
+            "type": "file",
+            "required": true,
+            "description": "Select the file to upload"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        }
+      }
+    },
+    "/verifyOtp": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Verify Otp",
+        "description": "Verify Otp",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "verifyOtp",
             "in": "body",
             "schema": {
               "type": "object",
               "properties": {
-                "error": {
-                  "example": "any"
+                "phoneOtp": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "phoneNumber": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "countryCode": {
+                  "type": "string",
+                  "example": "string"
                 }
               }
             }
           }
         ],
         "responses": {
-          "default": {
-            "description": ""
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      }
+    },
+    "/resendOtp": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Resend Otp",
+        "description": "Resend Otp",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "resendOtp",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "phoneNumber": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "countryCode": {
+                  "type": "string",
+                  "example": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
       }
     },
     "/logout": {
       "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Logout",
+        "description": "Logout",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "logout",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      }
+    },
+    "/logs": {
+      "post": {
+        "tags": [
+          "Activity Logs"
+        ],
+        "summary": "Create Activity Log",
+        "description": "Create Activity Log",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "logs",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "bookingId": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "action": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "service": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "fullRequestUrl": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "date": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "example": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      }
+    },
+    "/subscriptions": {
+      "post": {
+        "tags": [
+          "Stripe Subscription"
+        ],
+        "summary": "Create Subscription",
+        "description": "Create Subscription",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subscriptions",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "customerId": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "planId": {
+                  "type": "string",
+                  "example": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      }
+    },
+    "/payments": {
+      "post": {
         "description": "",
         "responses": {
           "401": {
@@ -146,13 +738,936 @@
         }
       }
     },
-    "/delete-account": {
-      "delete": {
+    "/subscriptions/clientSecret": {
+      "get": {
+        "tags": [
+          "Stripe Subscription"
+        ],
+        "summary": "Stripe Webhook",
+        "description": "Get Client Secret",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      }
+    },
+    "/webhooks": {
+      "post": {
+        "tags": [
+          "Stripe Subscription"
+        ],
+        "summary": "Stripe Webhook",
+        "description": "Stripe Webhook",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "webhooks",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        }
+      }
+    },
+    "/subscriptionPlans": {
+      "post": {
         "description": "",
         "responses": {
           "401": {
             "description": "Unauthorized"
           }
+        }
+      },
+      "get": {
+        "description": "",
+        "responses": {
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/subscriptionPlans/{id}": {
+      "put": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "delete": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/subscriptionPlans/{userType}": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "userType",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/admin/signIn": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Login",
+        "description": "Admin Login",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "description": "Admin Login",
+            "schema": {
+              "$ref": "#/definitions/signin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        }
+      }
+    },
+    "/admin/subscriptionPlans": {
+      "post": {
+        "tags": [
+          "Admin Stripe"
+        ],
+        "summary": "Create Subscription Plan",
+        "description": "Create Subscription Plan",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "description": "Create Subscription Plan",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "price": {
+                  "type": "string",
+                  "example": "number"
+                },
+                "currency": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "trialDays": {
+                  "type": "string",
+                  "example": "number"
+                },
+                "userType": {
+                  "type": "string",
+                  "example": "number"
+                },
+                "frequencyInterval": {
+                  "type": "string",
+                  "example": "number"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Admin Stripe"
+        ],
+        "summary": "Get Subscription Plans",
+        "description": "Get Subscription Plans",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      }
+    },
+    "/admin/subscriptionPlans/:id": {
+      "put": {
+        "tags": [
+          "Admin Stripe"
+        ],
+        "summary": "Update Subscription Plan",
+        "description": "Update Subscription Plan",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "Subscription Plan ID"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "description": "Update Subscription Plan",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "price": {
+                  "type": "string",
+                  "example": "number"
+                },
+                "currency": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "trialDays": {
+                  "type": "string",
+                  "example": "number"
+                },
+                "userType": {
+                  "type": "string",
+                  "example": "number"
+                },
+                "frequencyInterval": {
+                  "type": "string",
+                  "example": "number"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Admin Stripe"
+        ],
+        "summary": "Delete Subscription Plan",
+        "description": "Delete Subscription Plan",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "Subscription Plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        },
+        "security": [
+          {
+            "authToken": []
+          }
+        ]
+      }
+    },
+    "/subscriptionPlans/:type": {
+      "get": {
+        "tags": [
+          "Admin Stripe"
+        ],
+        "summary": "Get Subscription Plan By Type",
+        "description": "Get Subscription Plan By Type",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "Subscription Plan Type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Response200"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Response400"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/Response401"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/Response403"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/Response404"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Response500"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "signup": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "number",
+          "example": 1
+        },
+        "email": {
+          "type": "string",
+          "example": "string"
+        },
+        "profileImage": {
+          "type": "string",
+          "example": "string"
+        },
+        "name": {
+          "type": "string",
+          "example": "string"
+        },
+        "status": {
+          "type": "number",
+          "example": 1
+        },
+        "phoneNumber": {
+          "type": "string",
+          "example": "string"
+        },
+        "countryCode": {
+          "type": "string",
+          "example": "string"
+        },
+        "password": {
+          "type": "string",
+          "example": "string"
+        },
+        "resetPasswordToken": {
+          "type": "string",
+          "example": "string"
+        },
+        "emailOtpExpiryTime": {
+          "type": "string",
+          "example": "06-06-2025"
+        },
+        "country": {
+          "type": "string",
+          "example": "string"
+        },
+        "state": {
+          "type": "string",
+          "example": "string"
+        },
+        "city": {
+          "type": "string",
+          "example": "string"
+        },
+        "zip": {
+          "type": "string",
+          "example": "string"
+        },
+        "location": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "example": "Point"
+            },
+            "locationName": {
+              "type": "string",
+              "example": "string"
+            },
+            "coordinates": {
+              "type": "array",
+              "example": [
+                1,
+                2
+              ],
+              "items": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "phoneOtpExpiryTime": {
+          "type": "string",
+          "example": "06-06-2025"
+        },
+        "phoneOtp": {
+          "type": "string",
+          "example": "string"
+        },
+        "stripeCustomerId": {
+          "type": "string",
+          "example": "string"
+        },
+        "isDeleted": {
+          "type": "boolean",
+          "example": false
+        },
+        "mailingAddress": {
+          "type": "string",
+          "example": "string"
+        },
+        "certificateTypeId": {
+          "type": "string",
+          "example": "string"
+        },
+        "certificateAgencyIds": {
+          "type": "array",
+          "example": [
+            "string"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "certificateDocuments": {
+          "type": "array",
+          "example": [
+            "string"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "certificateExpiryDate": {
+          "type": "string",
+          "example": "06-06-2025"
+        },
+        "currentSubscriptionId": {
+          "type": "string",
+          "example": "string"
+        },
+        "uploadedIdOrLicenseDocument": {
+          "type": "string",
+          "example": "string"
+        },
+        "referenceDocuments": {
+          "type": "array",
+          "example": [
+            "string"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "workHistoryDescription": {
+          "type": "string",
+          "example": "string"
+        },
+        "phoneOtpVerified": {
+          "type": "boolean",
+          "example": true
+        },
+        "emailOtpVerified": {
+          "type": "boolean",
+          "example": true
+        },
+        "verifyByAdmin": {
+          "type": "boolean",
+          "example": true
+        },
+        "subscriptionStatus": {
+          "type": "number",
+          "example": 1
+        },
+        "agreedToTerms": {
+          "type": "boolean",
+          "example": true
+        },
+        "isTruthfully": {
+          "type": "boolean",
+          "example": true
+        },
+        "loginTime": {
+          "type": "string",
+          "example": "06-06-2025"
+        }
+      }
+    },
+    "signin": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "example": "string"
+        },
+        "password": {
+          "type": "string",
+          "example": "string"
+        }
+      }
+    },
+    "Response200": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "string"
+        },
+        "body": {
+          "type": "string",
+          "example": "string"
+        }
+      }
+    },
+    "Response400": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": false
+        },
+        "message": {
+          "type": "string",
+          "example": "string"
+        },
+        "body": {
+          "type": "string",
+          "example": "string"
+        }
+      }
+    },
+    "Response401": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": false
+        },
+        "message": {
+          "type": "string",
+          "example": "string"
+        },
+        "body": {
+          "type": "string",
+          "example": "string"
+        }
+      }
+    },
+    "Response403": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": false
+        },
+        "message": {
+          "type": "string",
+          "example": "string"
+        },
+        "body": {
+          "type": "string",
+          "example": "string"
+        }
+      }
+    },
+    "Response404": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": false
+        },
+        "message": {
+          "type": "string",
+          "example": "string"
+        },
+        "body": {
+          "type": "string",
+          "example": "string"
+        }
+      }
+    },
+    "Response500": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": false
+        },
+        "message": {
+          "type": "string",
+          "example": "string"
+        },
+        "body": {
+          "type": "string",
+          "example": "string"
         }
       }
     }

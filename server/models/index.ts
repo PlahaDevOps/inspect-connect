@@ -1,0 +1,16 @@
+// export const models = {
+//     bookingModel: require('./bookingModel'),
+//     activityLogModel: require('./logActivityModel'),
+//     certificateAgencyModel: require('./certificateAgencyModel'),
+//     certificateTypeModel: require('./certificateTypeModel'),
+//     certificateSubTypeModel: require('./certificateSubTypeModel'),
+//     cmsModel: require('./cmsModel'),
+//     contactModel: require('./contactUsModel'),
+//     faqModel: require('./faqModel'),
+//     notificationModel: require('./notificationModel'),
+//     reportModel: require('./reportModel'),
+//     reviewModel: require('./reviewModel'),
+//     subscriptionModel: require('./subscriptionModel'),
+//     subscriptionPlanModel: require('./subscriptionPlanModel'),
+//     userModel: require('./userModel').User,
+// }

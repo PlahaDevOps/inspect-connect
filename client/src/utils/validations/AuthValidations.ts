@@ -6,29 +6,53 @@ const signupValidationSchemas = [
     phoneNumber: Yup.string().required("Phone is required"),
     email: Yup.string().email("Invalid email").required("Email is required"),
     mailingAddress: Yup.string().required("Address is required"),
-    password: Yup.string().required("Password is required"),
+    password: Yup.string()
+      .required("Password is required")
+      .min(8, "Password must be at least 8 characters")
+      .max(20, "Password must be less than 20 characters")
+      .matches(
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/,
+        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+      ),
+      
     confirmPassword: Yup.string()
       .oneOf([Yup.ref("password")], "Passwords must match")
-      .required("Confirm Password is required"),
+      .required("Confirm Password is required")
+      .max(20, "Confirm Password must be less than 20 characters"),
+    // termsAccepted: Yup.boolean().oneOf([true], ""),
+    // eSigned: Yup.boolean().oneOf([true], ""),
   }),
   Yup.object().shape({
     certificateTypeId: Yup.string().required("Certification Type is required"),
-    certificateAgencyIds: Yup.array().of(Yup.string()).required("Certifying Agency is required"),
+    certificateAgencyIds: Yup.array()
+      .of(Yup.string())
+      .required("Certifying Agency is required")
+      .min(1, "At least one certifying agency is required"),
     certificateExpiryDate: Yup.string().required("Expiration Date is required"),
-    certificateDocuments: Yup.mixed().required("Certification File is required"),
+    certificateDocuments: Yup.mixed().required(
+      "Certification File is required"
+    ).test("file-required", "Certification File is required", (value) => {
+      if (!value) return false;
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return true;
+    }),
   }),
   Yup.object().shape({
     state: Yup.string().required("State is required"),
     country: Yup.string().required("County is required"),
-    city: Yup.string().required("City is required"),
-    // zip: Yup.string().required("Zip Code is required"), 
+    city: Yup.string().required("City is required"), 
   }),
   Yup.object().shape({
     profileImage: Yup.mixed().required("Profile Image is required"),
-    uploadedIdOrLicenseDocument: Yup.mixed().required("ID Document is required"),
-    referenceDocuments: Yup.mixed().required("Reference Letters are required"),
-    termsAccepted: Yup.boolean().oneOf([true], "Accept Terms"),
-    eSigned: Yup.boolean().oneOf([true], "E-Signature is required"),
+    uploadedIdOrLicenseDocument: Yup.mixed().required(
+      "ID Document is required"
+    ),
+    // referenceDocuments: Yup.mixed().required("Reference Letters are required"),
+    // workHistoryDescription: Yup.string().required("Work History Description is required"),
+    termsAccepted: Yup.boolean().oneOf([true], ""),
+    eSigned: Yup.boolean().oneOf([true], ""),
   }),
   Yup.object().shape({
     subscriptionType: Yup.string().required("Subscription Type is required"),
@@ -38,10 +62,17 @@ const LoginSchema = Yup.object().shape({
   email: Yup.string()
     .email("Invalid email address")
     .required("Email is required"),
+
   password: Yup.string()
     .min(6, "Password must be at least 6 characters")
-    .required("Password is required"),
+    .max(20, "Password must be less than 20 characters")
+    .required("Password is required")
+    .matches(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/,
+      "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+    ),
 });
+
 const forgotPasswordValidationSchema = Yup.object({
   email: Yup.string()
     .email("Invalid email address")
@@ -49,92 +80,32 @@ const forgotPasswordValidationSchema = Yup.object({
 });
 const resetPasswordValidationSchema = Yup.object({
   password: Yup.string()
+    .required("Password is required")
     .min(6, "Password must be at least 6 characters")
-    .required("Password is required"),
+    .max(20, "Password must be less than 20 characters")
+    .matches(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/,
+      "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+    ),
   confirmPassword: Yup.string()
     .oneOf([Yup.ref("password")], "Passwords must match")
-    .required("Confirm Password is required"),
+    .required("Confirm Password is required")
+    .max(20, "Confirm Password must be less than 20 characters"),
 });
-export { signupValidationSchemas, LoginSchema, forgotPasswordValidationSchema, resetPasswordValidationSchema };
+const otpValidationSchema = Yup.object({
+  otp: Yup.array()
+  .length(6)
+ 
+  .test("all-filled", "Please enter the 6-digit code", (arr) =>
+    Array.isArray(arr) && arr.every(ch => /^\d$/.test(ch || ""))
+  ),
+});
 
-
-
-
-
-
-// type ValidationRule = {
-//   required?: boolean;
-//   pattern?: RegExp;
-//   minLength?: number;
-//   maxLength?: number;
-//   errorMessage: {
-//     requiredMsg?: string;
-//     patternMsg?: string;
-//     minLengthMsg?: string;
-//     maxLengthMsg?: string;
-//   };
-// };
-
-// export type ValidationSchema = Record<string, ValidationRule>;
-
-// export const validateField = (
-//   name: string,
-//   value: string,
-//   schema: ValidationSchema
-// ): string | null => {
-//   const rules = schema[name];
-//   if (!rules) return null;
-
-//   const { required, pattern, minLength, maxLength, errorMessage } = rules;
-
-//   if (required && !value) {
-//     return errorMessage.requiredMsg || 'This field is required';
-//   }
-
-//   if (pattern && !pattern.test(value)) {
-//     return errorMessage.patternMsg || 'Invalid format';
-//   }
-//   if (minLength && value.length < minLength) {
-//     return errorMessage.minLengthMsg || `Must be at least ${minLength} characters`;
-//   }
-//   if (maxLength && value.length > maxLength) {
-//     return errorMessage.maxLengthMsg || `Must not exceed ${maxLength} characters`;
-//   }
-
-//   return null;
-// };
-
-// export const loginValidation = {
-//   email: {
-//     required: true,
-//     pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-//     errorMessage: { 
-//       requiredMsg: 'Email is required',
-//       patternMsg: 'Invalid email format',
-//     },
-//   },
-//   password: {
-//     required: true,
-//     pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])[^\s]{4,10}$/,
-//     minLength: 4,
-//     maxLength: 10,
-//     errorMessage: {
-//       requiredMsg: 'Password is required',
-//       patternMsg:
-//       'Password must contain uppercase, lowercase, number, special character, and no spaces',
-//       minLengthMsg: 'Password must be at least 4 characters long',
-//       maxLengthMsg: 'Password must not exceed 10 characters',
-//     },
-//   },
-// };
-
-// export const forgotPasswordValidation = {
-//   email: {
-//     required: true,
-//     pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-//     errorMessage: {
-//       requiredMsg: 'Email is required',
-//       patternMsg: 'Invalid email format',
-//     },
-//   },
-// };
+export {
+  signupValidationSchemas,
+  LoginSchema,
+  forgotPasswordValidationSchema,
+  resetPasswordValidationSchema,
+  otpValidationSchema,
+};
+ 

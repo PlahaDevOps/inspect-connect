@@ -9,8 +9,6 @@ export default function App() {
     <ThemeProvider theme={themeProvider}>
       <CssBaseline />
       <AppRoutes />
-
-
       <Toaster />
     </ThemeProvider>
   );

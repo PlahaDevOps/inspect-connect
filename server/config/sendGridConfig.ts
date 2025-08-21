@@ -1,5 +1,11 @@
 import sgMail from '@sendgrid/mail';
 import { IMailData } from '../interfaces/commonInterfaces';
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({
+  path: path.resolve(__dirname, `../.env.${process.env.NODE_ENV || 'development'}`)
+});
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || 'simranjeet.kaur.lnpinfotech@gmail.com');
 

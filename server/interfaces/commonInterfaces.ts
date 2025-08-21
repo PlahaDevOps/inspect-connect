@@ -1,5 +1,4 @@
 import type { ConnectOptions } from "mongoose";
-import { IUser } from "./userInterface";
 
 export interface DatabaseConfig {
   uri: string;

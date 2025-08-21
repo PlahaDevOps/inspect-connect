@@ -1,5 +1,5 @@
 import React from 'react';  
-import ResetPassword from '../../shared/components/ResetPassword'; 
+import ResetPassword from '../../shared/components/users/ResetPassword'; 
 
 const ResetPasswordPage: React.FC = () => {
   return (

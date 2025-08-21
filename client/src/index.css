@@ -2,15 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-
-a, a:hover{
+a,
+a:hover {
   color: #000000de;
 }
 .react-tel-input .form-control:focus {
   border-color: #000000de !important;
   box-shadow: 0 0 0 1px #000000de !important;
 }
-
+.focusRed .form-control:focus {
+  border-color: red !important;
+  box-shadow: 0 0 0 1px red !important;
+}
+.react-tel-input .selected-flag {
+  padding: 0 0 0 14px !important;
+}
 
 /* :root {
   font-family: system-ui,   Helvetica, Arial, sans-serif;

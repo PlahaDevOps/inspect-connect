@@ -1,5 +1,5 @@
 import React from 'react'; 
-import SignUp from '../../shared/components/SignUp';
+import SignUp from '../../shared/components/users/SignUp';
 // import { Box } from '@mui/material';
 
 const SignUpPage: React.FC = () => {

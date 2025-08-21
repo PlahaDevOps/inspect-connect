@@ -1,8 +1,8 @@
-import { createSlice } from '@reduxjs/toolkit';
-import type { AuthState } from '../../shared/interfaces/commonInterface';
-import type { User } from '../../shared/interfaces/userInterface';
-import { forgotPassword, loginUser, registerUser, resendOtp, resetPassword, verifyOtp } from '../actions/authActions';
-import toast from 'react-hot-toast';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import type { AuthState } from '../../shared/interfaces/commonInterface'; 
+import { createSubscription, forgotPassword, getSubscriptionPlans, loginUser, logoutUser, registerUser, resendOtp, resetPassword, verifyOtp } from '../actions/authActions';
+import toast from 'react-hot-toast'; 
+
 
 const initialState: AuthState = {
   user: null,
@@ -10,8 +10,11 @@ const initialState: AuthState = {
   loading: false,
   error: null,
   forgotPasswordResponse: null,
+  role: null,
+  subscriptionPlans: null,
+  subscriptionStatus: null,
+  currentSubscriptionId: null,
 };
-
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -23,6 +26,12 @@ const authSlice = createSlice({
       state.user = null;
       state.authToken = null;
       localStorage.removeItem('token');
+    },
+    setAccessToken(state, action: PayloadAction<string | null>) {
+      state.authToken = action.payload;
+    },
+    hydrate(state, action: PayloadAction<Partial<AuthState>>) {
+      Object.assign(state, action.payload);
     },
   },
   extraReducers: (builder) => {
@@ -38,10 +47,35 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.fulfilled, (state, action) => {
         toast.success('Login successful');
+        console.log("action.payload", action.payload);
         state.loading = false;
-        state.user = action.payload.user as User;
-        state.authToken = action.payload.authToken || action.payload.token;
-        localStorage.setItem('token', action.payload.authToken || action.payload.token);
+        if(action.payload.subscriptionStatus === "active"){
+          state.subscriptionStatus = "active";
+        }else{
+          state.subscriptionStatus = "inactive";
+        }
+        // Handle case where user data is directly in payload or nested under user key
+        if (action.payload.user) {
+          state.user = action.payload.user;
+          state.authToken = action.payload.authToken || action.payload.token || '';
+          state.role = action.payload.user.role;
+          state.currentSubscriptionId = action?.payload?.currentSubscriptionId || "";
+        } else {
+          // User data is directly in payload - check if it has required User properties
+          if (action.payload._id && action.payload.email && action.payload.name && action.payload.role !== undefined) {
+            state.user = {
+              _id: action.payload._id,
+              email: action.payload.email,
+              name: action.payload.name,
+              role: action.payload.role,
+              createdAt: action.payload.createdAt || new Date().toISOString(),
+              updatedAt: action.payload.updatedAt || new Date().toISOString()
+            };
+            state.role = action.payload.role;
+          }
+          state.authToken = action.payload.authToken || action.payload.token || '';
+        }
+        localStorage.setItem('token', state.authToken || '');
       })
       .addCase(registerUser.pending, (state) => {
         state.loading = true;
@@ -55,9 +89,25 @@ const authSlice = createSlice({
       .addCase(registerUser.fulfilled, (state, action) => {
         toast.success('Registration successful');
         state.loading = false;
-        state.user = action.payload.user as User;
-        state.authToken = action.payload.token;
-        localStorage.setItem('token', action.payload.authToken || action.payload.token);
+        // Handle case where user data is directly in payload or nested under user key
+        if (action.payload.user) {
+          state.user = action.payload.user;
+          state.authToken = action.payload.token || '';
+        } else {
+          // User data is directly in payload - check if it has required User properties
+          if (action.payload._id && action.payload.email && action.payload.name && action.payload.role !== undefined) {
+            state.user = {
+              _id: action.payload._id,
+              email: action.payload.email,
+              name: action.payload.name,
+              role: action.payload.role,
+              createdAt: action.payload.createdAt || new Date().toISOString(),
+              updatedAt: action.payload.updatedAt || new Date().toISOString()
+            };
+          }
+          state.authToken = action.payload.authToken || action.payload.token || '';
+        }
+        localStorage.setItem('token', state.authToken || '');
       })
       .addCase(forgotPassword.pending, (state) => {
         state.loading = true;
@@ -120,9 +170,57 @@ const authSlice = createSlice({
         toast.success('OTP verified successfully');
         state.loading = false;
         state.error = null;
-      });
+      })
+      .addCase(getSubscriptionPlans.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(getSubscriptionPlans.rejected, (state, action) => {
+        state.loading = false;
+        state.error = 'Get subscription plans failed';
+        toast.error(action.payload || 'Get subscription plans failed');
+      })
+      .addCase(getSubscriptionPlans.fulfilled, (state, action) => {
+        console.log("Subscription plans fetched successfully", action.payload);
+        // toast.success('Subscription plans fetched successfully');
+        state.loading = false;
+        state.error = null;
+        state.subscriptionPlans = action.payload;
+      })
+      .addCase(createSubscription.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(createSubscription.rejected, (state, action) => {
+        state.loading = false;
+        state.error = 'Create subscription failed';
+        toast.error(action.payload || 'Create subscription failed');
+      })
+      .addCase(createSubscription.fulfilled, (state, action) => {
+        console.log("action.payload", action.payload); 
+        state.loading = false;
+        state.error = null; 
+      })
+      .addCase(logoutUser.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(logoutUser.rejected, (state, action) => {
+        state.loading = false;
+        state.error = 'Logout failed';
+        toast.error(action.payload || 'Logout failed');
+      })
+      .addCase(logoutUser.fulfilled, (state, action) => {
+        console.log("action.payload", action.payload);
+        state.loading = false;
+        state.error = null;
+        state.user = null;
+        state.authToken = null;
+        localStorage.removeItem('token');
+       
+      })
   },
 });
 
-export const { clearError, logout } = authSlice.actions;
+export const { clearError, logout, setAccessToken } = authSlice.actions;
 export default authSlice.reducer;
