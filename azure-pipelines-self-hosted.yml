@@ -3,10 +3,7 @@ trigger:
     include:
       - main        # Only push/merge to main triggers CI/CD
 
-pr:
-  branches:
-    include:
-      - main        # PRs targeting main also run the pipeline (build + preview deploy)
+pr: none            # Disable PR validation runs for this pipeline
 
 variables:
   nodeVersion: '20.x'
@@ -18,10 +15,6 @@ variables:
 
   frontendAppName: 'inspect-connect-test'
   backendAppName:  'inspect-connect-api-test'
-
-  # --- gating & preview slot ---
-  isMainPush: $[and(eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))]
-  prSlot: 'staging'   # use 'pr-$(System.PullRequest.PullRequestNumber)' for per-PR slots
 
 stages:
 # =========================
@@ -42,7 +35,7 @@ stages:
       inputs: { versionSpec: $(nodeVersion) }
       displayName: Use Node.js $(nodeVersion)
 
-    # Resolve backend default hostname for VITE_API_URL (prod app host)
+    # Resolve backend default hostname for VITE_API_URL
     - task: AzureCLI@2
       displayName: 'Resolve BE defaultHostName'
       inputs:
@@ -81,7 +74,7 @@ stages:
         targetPath: '$(Build.ArtifactStagingDirectory)/frontend.zip'
         artifact: 'frontend'
 
-    # --- Backend --- (slim ZIP: package.json, dist/**, prod node_modules/**)
+    # --- Backend ---
     - script: |
         set -e
         npm config set cache "$(npmCacheDir)"
@@ -90,10 +83,8 @@ stages:
 
         rm -rf publish && mkdir publish
         cp package*.json publish/ 2>/dev/null || true
-
         npm install --omit=dev --prefix publish --legacy-peer-deps --prefer-offline --no-audit
         cp -r dist publish/
-
         (cd publish && zip -r ../server.zip .)
       workingDirectory: server
       displayName: 'BE: Build & Create slim ZIP'
@@ -104,142 +95,18 @@ stages:
         targetPath: '$(Build.SourcesDirectory)/server/server.zip'
         artifact: 'backend'
 
-# =========================================
-# Stage 2: Preview Deploy (PR -> slot only)
-# =========================================
-- stage: PreviewDeploy
-  displayName: "Preview Deploy (PR -> slot)"
-  dependsOn: Build
-  condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
-  jobs:
-  - job: DeployPreview
-    displayName: "Deploy FE & BE to $(prSlot) slot"
-    pool:
-      name: 'inspect-connect-agents'
-    steps:
-    - checkout: none
-
-    # Get artifacts
-    - task: DownloadPipelineArtifact@2
-      inputs:
-        artifact: 'frontend'
-        path: '$(Pipeline.Workspace)/frontend'
-    - task: DownloadPipelineArtifact@2
-      inputs:
-        artifact: 'backend'
-        path: '$(Pipeline.Workspace)/backend'
-
-    # Create slots if missing (idempotent)
-    - task: AzureCLI@2
-      displayName: "Create slots (if needed)"
-      inputs:
-        azureSubscription: '$(azureSubscription)'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          az webapp deployment slot create -g $(resourceGroupName) -n $(frontendAppName) --slot $(prSlot) --configuration-source $(frontendAppName) || true
-          az webapp deployment slot create -g $(resourceGroupName) -n $(backendAppName)  --slot $(prSlot) --configuration-source $(backendAppName)  || true
-
-    # FE: deploy to slot
-    - task: AzureCLI@2
-      displayName: "FE: Deploy to slot"
-      inputs:
-        azureSubscription: '$(azureSubscription)'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          az webapp deploy -g $(resourceGroupName) -n $(frontendAppName) --slot $(prSlot) \
-            --src-path "$(Pipeline.Workspace)/frontend/frontend.zip" --type zip --restart true --timeout 1800
-          az webapp config appsettings set -g $(resourceGroupName) -n $(frontendAppName) --slot $(prSlot) \
-            --settings WEBSITES_PORT=8080
-          az webapp config set -g $(resourceGroupName) -n $(frontendAppName) --slot $(prSlot) \
-            --startup-file "pm2 serve /home/site/wwwroot 8080 --spa --no-daemon"
-
-    # FE: resolve slot host & smoke test
-    - task: AzureCLI@2
-      displayName: "FE: Resolve slot host"
-      inputs:
-        azureSubscription: '$(azureSubscription)'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          HOST=$(az webapp show -g $(resourceGroupName) -n $(frontendAppName) --slot $(prSlot) --query defaultHostName -o tsv)
-          echo "##vso[task.setvariable variable=FE_SLOT_HOST]$HOST"
-    - bash: |
-        set -euo pipefail
-        URL="https://$(FE_SLOT_HOST)"
-        echo "Probing $URL ..."
-        for i in {1..20}; do
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
-          if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
-            echo "Frontend slot reachable (HTTP $code)"
-            break
-          fi
-          sleep 5
-        done
-        html=$(curl -fsSL "$URL")
-        echo "$html" | grep -qi "<title>" || { echo "Missing <title> in HTML"; exit 1; }
-      displayName: "FE: Slot smoke check"
-
-    # BE: deploy to slot
-    - task: AzureCLI@2
-      displayName: "BE: Deploy to slot"
-      inputs:
-        azureSubscription: '$(azureSubscription)'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --slot $(prSlot) --linux-fx-version "NODE|20-lts"
-          az webapp config appsettings set -g $(resourceGroupName) -n $(backendAppName) --slot $(prSlot) --settings \
-            WEBSITE_RUN_FROM_PACKAGE=1 WEBSITE_NODE_DEFAULT_VERSION="~20" NODE_ENV=production
-          az webapp deploy -g $(resourceGroupName) -n $(backendAppName) --slot $(prSlot) \
-            --src-path "$(Pipeline.Workspace)/backend/server.zip" --type zip --restart true --timeout 1800
-          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --slot $(prSlot) \
-            --startup-file "node dist/server.js"
-
-    # BE: resolve slot host & smoke test
-    - task: AzureCLI@2
-      displayName: "BE: Resolve slot host"
-      inputs:
-        azureSubscription: '$(azureSubscription)'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          set -euo pipefail
-          HOST=$(az webapp show -g $(resourceGroupName) -n $(backendAppName) --slot $(prSlot) --query defaultHostName -o tsv)
-          echo "##vso[task.setvariable variable=BE_SLOT_HOST]$HOST"
-    - bash: |
-        set -euo pipefail
-        URL="https://$(BE_SLOT_HOST)/"
-        echo "Probing $URL ..."
-        for i in {1..20}; do
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
-          if [ "$code" = "200" ]; then
-            echo "Backend slot healthy (HTTP 200)"
-            exit 0
-          fi
-          sleep 5
-        done
-        echo "Backend slot did not become healthy"; exit 1
-      displayName: "BE: Slot smoke check"
-
-# =======================================
-# Stage 3: Frontend Deploy (prod, main only)
-# =======================================
+# =========================
+# Stage 2: Frontend Deploy
+# =========================
 - stage: FrontendDeploy
   displayName: Deploy Frontend
   dependsOn: Build
-  condition: and(succeeded(), eq(variables.isMainPush, 'true'))
   jobs:
   - job: DeployFrontend
     pool:
       name: 'inspect-connect-agents'
     steps:
-    - checkout: none   # 🚀 skip repo checkout, only use artifact
+    - checkout: none   # use artifact only
 
     - task: DownloadPipelineArtifact@2
       inputs:
@@ -282,23 +149,22 @@ stages:
           echo "Attempt $i: HTTP $code; retrying..."
           sleep 5
         done
-        html=$(curl -fsSL "$URL")
+        html=$(curl -fsSL "$URL")   # follow redirects
         echo "$html" | grep -qi "<title>" || { echo "Missing <title> in HTML"; exit 1; }
       displayName: 'FE: Smoke check'
 
-# =====================================
-# Stage 4: Backend Deploy (prod, main only)
-# =====================================
+# =========================
+# Stage 3: Backend Deploy
+# =========================
 - stage: BackendDeploy
   displayName: Deploy Backend
   dependsOn: Build
-  condition: and(succeeded(), eq(variables.isMainPush, 'true'))
   jobs:
   - job: DeployBackend
     pool:
       name: 'inspect-connect-agents'
     steps:
-    - checkout: none   # 🚀 skip repo checkout, only use artifact
+    - checkout: none   # use artifact only
 
     - task: DownloadPipelineArtifact@2
       inputs:
@@ -382,13 +248,12 @@ stages:
         echo "Backend did not become healthy"; exit 1
       displayName: 'BE: Smoke check'
 
-# =====================================
-# Stage 5: Summary (prod, main only)
-# =====================================
+# =========================
+# Stage 4: Summary
+# =========================
 - stage: DeploymentSummary
   displayName: Deployment Summary
   dependsOn: [ FrontendDeploy, BackendDeploy ]
-  condition: and(succeeded(), eq(variables.isMainPush, 'true'))
   jobs:
   - job: Summary
     pool:
