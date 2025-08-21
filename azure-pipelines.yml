@@ -82,6 +82,11 @@ stages:
           npm install --legacy-peer-deps --prefer-offline --no-audit
         fi
 
+        # Fix Rollup native dependency issue
+        echo "Fixing Rollup native dependency..."
+        npm rebuild @rollup/rollup-darwin-x64 --update-binary || true
+        npm rebuild rollup --update-binary || true
+
         echo "Running TypeScript typecheck (non-blocking)..."
         # Do not fail the build if type errors exist; save report
         npm run typecheck > fe-typecheck.txt || true
