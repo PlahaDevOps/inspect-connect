@@ -20,7 +20,13 @@ connectDatabase().then(() => {
   const http = createServer(app);
 
 app.use(cors({
-  origin: ['http://localhost:5173'],
+  origin: [
+    'http://localhost:5173',
+    'https://inspect-connect-test-bgb3gea5c0ezfkfe.canadacentral-01.azurewebsites.net',
+    'https://inspect-connect-test.azurewebsites.net',
+    /\.azurewebsites\.net$/, // Allow any Azure Web App subdomain
+    /\.canadacentral-01\.azurewebsites\.net$/ // Allow Canada Central region
+  ],
   credentials: true
 }));
 app.use("/api/v1/webhook", express.raw({ type: "application/json" }));

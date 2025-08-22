@@ -362,6 +362,10 @@ stages:
           # Verify environment variables are set
           echo "Verifying environment variables..."
           az webapp config appsettings list -g $(resourceGroupName) -n $(backendAppName) --query "[?name=='NODE_ENV' || name=='WEBSITES_PORT' || name=='MONGODB_URI']" -o table
+          
+          # Give the app time to start up
+          echo "Waiting for app to start up..."
+          sleep 30
 
     - task: AzureCLI@2
       displayName: 'BE: Resolve defaultHostName'
@@ -378,19 +382,42 @@ stages:
 
     - bash: |
         set -euo pipefail
-        PATH_OR_ROOT="${HEALTH_PATH:-/}"        # Optional pipeline variable HEALTH_PATH (e.g., /api/health)
-        URL="https://$(BE_HOST)${PATH_OR_ROOT}"
+        HEALTH_PATH="${HEALTH_PATH:-/health}"   # Use dedicated health endpoint
+        URL="https://$(BE_HOST)${HEALTH_PATH}"
         echo "Probing $URL ..."
-        for i in {1..30}; do
-          code=$(curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w "%{http_code}" "$URL")
+        
+        # First, try the health endpoint
+        for i in {1..15}; do
+          echo "Health check attempt $i..."
+          response=$(curl -sS --connect-timeout 10 --max-time 20 "$URL" 2>/dev/null || echo "")
+          code=$(curl -sS --connect-timeout 10 --max-time 20 -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
+          
           if [ "$code" = "200" ]; then
-            echo "Backend healthy (HTTP 200)"
+            echo "✅ Backend healthy (HTTP 200)"
+            echo "Response: $response"
             exit 0
           fi
-          echo "Attempt $i: HTTP $code; retrying..."
-          sleep 5
+          
+          echo "Attempt $i: HTTP $code; response: $response"
+          
+          # If we get 403, try root endpoint as fallback
+          if [ "$code" = "403" ] && [ "$HEALTH_PATH" = "/health" ]; then
+            echo "Trying root endpoint as fallback..."
+            root_code=$(curl -sS --connect-timeout 10 --max-time 20 -o /dev/null -w "%{http_code}" "https://$(BE_HOST)/" 2>/dev/null || echo "000")
+            if [ "$root_code" = "200" ]; then
+              echo "✅ Backend healthy via root endpoint (HTTP 200)"
+              exit 0
+            fi
+            echo "Root endpoint also failed: HTTP $root_code"
+          fi
+          
+          sleep 10
         done
-        echo "Backend did not become healthy"; exit 1
+        
+        # Final attempt with more verbose output
+        echo "Final diagnostic attempt..."
+        curl -v --connect-timeout 10 --max-time 20 "$URL" || true
+        echo "Backend did not become healthy after 15 attempts"; exit 1
       displayName: 'BE: Smoke check'
 
 # =========================
@@ -412,3 +439,4 @@ stages:
         echo "Backend  URL (resolved at runtime)."
         echo "Env: $(environment) | Build: $(Build.BuildNumber)"
       displayName: Summary
+
