@@ -332,21 +332,8 @@ stages:
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "npm run prod"
           
-          # Web app is enabled by default, no need to set it explicitly
-
-          ZIP="$(Pipeline.Workspace)/backend/server.zip"
-          for i in 1 2 3; do
-            echo "Deploy attempt $i ..."
-            if az webapp deploy -g $(resourceGroupName) -n $(backendAppName) --src-path "$ZIP" --type zip --restart true --timeout 1800; then
-              echo "✅ BE deploy succeeded"
-              break
-            fi
-            echo "⚠️  BE deploy failed (attempt $i). Retrying in 10s..."
-            sleep 10
-          done
-          
-          # Set environment variables AFTER deployment
-          echo "Setting environment variables..."
+          # Set environment variables BEFORE deployment (so app doesn't crash on first boot)
+          echo "Setting environment variables BEFORE deployment..."
           az webapp config appsettings set -g $(resourceGroupName) -n $(backendAppName) --settings \
             WEBSITE_RUN_FROM_PACKAGE=1 \
             WEBSITE_NODE_DEFAULT_VERSION="~20" \
@@ -367,6 +354,17 @@ stages:
             SALT_ROUNDS="$(SALT_ROUNDS)" \
             CLIENT_BASE_URL="$(CLIENT_BASE_URL)" \
             ENCRYPTION_KEY="$(ENCRYPTION_KEY)"
+
+          ZIP="$(Pipeline.Workspace)/backend/server.zip"
+          for i in 1 2 3; do
+            echo "Deploy attempt $i ..."
+            if az webapp deploy -g $(resourceGroupName) -n $(backendAppName) --src-path "$ZIP" --type zip --restart true --timeout 1800; then
+              echo "✅ BE deploy succeeded"
+              break
+            fi
+            echo "⚠️  BE deploy failed (attempt $i). Retrying in 10s..."
+            sleep 10
+          done
           
           # Verify environment variables are set
           echo "Verifying environment variables..."
@@ -464,4 +462,40 @@ stages:
         echo "Backend  URL (resolved at runtime)."
         echo "Env: $(environment) | Build: $(Build.BuildNumber)"
       displayName: Summary
+
+# =========================
+# Stage 5: Collect Logs on Failure
+# =========================
+- stage: CollectLogs
+  displayName: Collect Kudu Docker Logs (on failure)
+  dependsOn: BackendDeploy
+  condition: failed()
+  jobs:
+  - job: CollectLogs
+    pool:
+      name: 'inspect-connect-agents'
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Collect backend crash logs'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          echo "🔍 COLLECTING BACKEND CRASH LOGS..."
+          
+          # Get recent logs
+          echo "Getting recent application logs..."
+          az webapp log download -g $(resourceGroupName) -n $(backendAppName) --log-file crash-logs.zip
+          
+          # Get Kudu logs
+          echo "Getting Kudu logs..."
+          az webapp log tail -g $(resourceGroupName) -n $(backendAppName) --timeout 60 || echo "Log tail failed"
+          
+          # Get web app status
+          echo "Web app status:"
+          az webapp show -g $(resourceGroupName) -n $(backendAppName) --query "{state:state,enabled:enabled,defaultHostName:defaultHostName}" -o table
+          
+          echo "✅ Log collection complete. Check crash-logs.zip for detailed error information."
 
