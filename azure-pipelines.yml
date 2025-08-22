@@ -331,6 +331,10 @@ stages:
           echo "Configuring web app settings..."
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "npm run prod"
+          
+          # Ensure web app is enabled and running
+          echo "Ensuring web app is enabled..."
+          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --enabled true
 
           ZIP="$(Pipeline.Workspace)/backend/server.zip"
           for i in 1 2 3; do
@@ -353,19 +357,42 @@ stages:
             MONGODB_URI="$(MONGODB_URI)" \
             JWT_SECRET="$(JWT_SECRET)" \
             SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
+            FROM_EMAIL="$(FROM_EMAIL)" \
             TWILIO_ACCOUNT_SID="$(TWILIO_ACCOUNT_SID)" \
             TWILIO_AUTH_TOKEN="$(TWILIO_AUTH_TOKEN)" \
+            TWILIO_PHONE_NUMBER="$(TWILIO_PHONE_NUMBER)" \
             CLOUDINARY_CLOUD_NAME="$(CLOUDINARY_CLOUD_NAME)" \
             CLOUDINARY_API_KEY="$(CLOUDINARY_API_KEY)" \
-            CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)"
+            CLOUDINARY_API_SECRET="$(CLOUDINARY_API_SECRET)" \
+            STRIPE_SECRET_KEY="$(STRIPE_SECRET_KEY)" \
+            STRIPE_WEBHOOK_SECRET_KEY="$(STRIPE_WEBHOOK_SECRET_KEY)" \
+            SALT_ROUNDS="$(SALT_ROUNDS)" \
+            CLIENT_BASE_URL="$(CLIENT_BASE_URL)" \
+            ENCRYPTION_KEY="$(ENCRYPTION_KEY)"
           
           # Verify environment variables are set
           echo "Verifying environment variables..."
           az webapp config appsettings list -g $(resourceGroupName) -n $(backendAppName) --query "[?name=='NODE_ENV' || name=='WEBSITES_PORT' || name=='MONGODB_URI']" -o table
           
+          # Restart the web app to pick up new environment variables
+          echo "Restarting web app to apply new settings..."
+          az webapp restart -g $(resourceGroupName) -n $(backendAppName)
+          
           # Give the app time to start up
           echo "Waiting for app to start up..."
           sleep 30
+          
+          # Check web app status and logs
+          echo "Checking web app status..."
+          az webapp show -g $(resourceGroupName) -n $(backendAppName) --query "{state:state,enabled:enabled,defaultHostName:defaultHostName}" -o table
+          
+          # Check if web app is running
+          echo "Checking web app logs..."
+          az webapp log tail -g $(resourceGroupName) -n $(backendAppName) --timeout 30 || echo "Log tail failed, checking recent logs..."
+          
+          # Get recent logs
+          echo "Getting recent application logs..."
+          az webapp log download -g $(resourceGroupName) -n $(backendAppName) --log-file app-logs.zip || echo "Log download failed"
 
     - task: AzureCLI@2
       displayName: 'BE: Resolve defaultHostName'
