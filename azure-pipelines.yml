@@ -332,9 +332,7 @@ stages:
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --linux-fx-version "NODE|20-lts"
           az webapp config set -g $(resourceGroupName) -n $(backendAppName) --startup-file "npm run prod"
           
-          # Ensure web app is enabled and running
-          echo "Ensuring web app is enabled..."
-          az webapp config set -g $(resourceGroupName) -n $(backendAppName) --enabled true
+          # Web app is enabled by default, no need to set it explicitly
 
           ZIP="$(Pipeline.Workspace)/backend/server.zip"
           for i in 1 2 3; do
